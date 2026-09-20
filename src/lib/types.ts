@@ -1,0 +1,210 @@
+/**
+ * 农忙参谋 — 共享类型定义
+ *
+ * 这些类型是 /api/advisony 响应体的契约来源，同时被 Pages Functions（functions/）
+ * 与决策模块（src/decision/）复用。
+ */
+
+/** 建议等级，前端用它决定卡片配色与排序。 */
+export type AdviceLevel = "ok" | "watch" | "warn" | "alert";
+
+export const LEVEL_RANK: Record<AdviceLevel, number> = {
+  ok: 0,
+  watch: 1,
+  warn: 2,
+  alert: 3,
+};
+
+export const LEVEL_LABEL: Record<AdviceLevel, string> = {
+  ok: "平稳",
+  watch: "关注",
+  warn: "预警",
+  alert: "警报",
+};
+
+/** 卡片上展示的关键指标。 */
+export interface Metric {
+  label: string;
+  value: string;
+}
+
+/** 一张中文建议卡片：结论 + 原因 + 操作建议。 */
+export interface AdviceCard {
+  id: string;
+  category: string;
+  level: AdviceLevel;
+  levelLabel: string;
+  /** 结论：一句话给出判断，尽量带上关键数字。 */
+  headline: string;
+  /** 原因：说明判断依据与所用数据。 */
+  reason: string;
+  /** 操作建议：可直接执行的农事动作。 */
+  actions: string[];
+  metrics: Metric[];
+}
+
+/** Open-Meteo hourly 变量规范化结果。缺失值一律为 NaN。 */
+export interface HourlySeries {
+  time: string[];
+  temperature: number[];
+  humidity: number[];
+  dewPoint: number[];
+  precipitation: number[];
+  precipProbability: number[];
+  windSpeed: number[];
+  windGust: number[];
+  et0: number[];
+  soilMoisture0to1: number[];
+  soilMoisture3to9: number[];
+  soilMoisture9to27: number[];
+  soilTemperature6: number[];
+  cloudCover: number[];
+}
+
+/** Open-Meteo daily 变量规范化结果。缺失值一律为 NaN。 */
+export interface DailySeries {
+  time: string[];
+  tMax: number[];
+  tMin: number[];
+  precipitation: number[];
+  et0: number[];
+  precipProbabilityMax: number[];
+  windSpeedMax: number[];
+}
+
+/** 一次请求拿到的全部气象/土壤数据。 */
+export interface WeatherBundle {
+  latitude: number;
+  longitude: number;
+  elevation: number;
+  timezone: string;
+  utcOffsetSeconds: number;
+  /** 站点本地日期，形如 2026-09-20。 */
+  localDate: string;
+  localHour: number;
+  /** hourly 数组中对应“当前小时”的下标。 */
+  nowIndex: number;
+  hourly: HourlySeries;
+  daily: DailySeries;
+  fetchedAt: string;
+  /** 是否因为变量裁剪而降级到精简变量集。 */
+  degradedVariables: boolean;
+}
+
+/** 病虫害气象风险模型（简化版，仅依赖温湿条件与参考积温）。 */
+export interface PestModel {
+  id: string;
+  name: string;
+  kind: "虫害" | "病害";
+  /** 发育起点温度 ℃。 */
+  baseTemp: number;
+  /** 参考积温阈值（自生长季起算，仅作发育进度参考）。 */
+  gddReference: number;
+  /** 适宜日均气温区间 ℃。 */
+  tempMin: number;
+  tempMax: number;
+  /** 适宜相对湿度下限 %。 */
+  humidityMin: number;
+  /** 是否需要连续湿润（降水）条件。 */
+  needsWet: boolean;
+  advice: string;
+}
+
+/** 作物参数档案。土壤水文参数为经验假定值，用于在没有田块实测数据时给出量级合理的建议。 */
+export interface CropProfile {
+  id: string;
+  name: string;
+  aliases: string[];
+  /** GDD 基温 ℃（生长度日基点）。 */
+  baseTemp: number;
+  /** GDD 上限温度 ℃（超出部分不计入积温）。 */
+  upperTemp: number;
+  /** 作物系数 Kc，用于由 ET₀ 换算作物蒸散量 ETc。 */
+  kc: number;
+  /** 霜冻风险阈值：预报最低气温低于该值即提示霜冻。 */
+  frostTmin: number;
+  /** 热应激阈值：预报最高气温高于该值即提示高温胁迫。 */
+  heatTmax: number;
+  /** 假定田间持水量 m³/m³。 */
+  fieldCapacity: number;
+  /** 假定凋萎点 m³/m³。 */
+  wiltingPoint: number;
+  /** 根区有效水补给触发比例：剩余有效水低于 TAW×该值时建议灌溉。 */
+  refillTrigger: number;
+  /** 有效根区深度 m。 */
+  rootDepth: number;
+  /** 土壤参数假定说明，会写进灌溉卡片的原因里。 */
+  assumptions: string;
+  pests: PestModel[];
+}
+
+/** 定位结果。 */
+export interface ResolvedLocation {
+  name: string;
+  region: string;
+  lat: number;
+  lon: number;
+  source: "ip" | "manual";
+  timezone: string;
+}
+
+/** 决策模块的统一输入。 */
+export interface AdvisoryContext {
+  location: ResolvedLocation;
+  crop: CropProfile;
+  weather: WeatherBundle;
+}
+
+export interface AdvisorySummary {
+  level: AdviceLevel;
+  headline: string;
+  /** 最需要关注的那张卡片。 */
+  focusId: string;
+}
+
+export interface AdvisoryResult {
+  summary: AdvisorySummary;
+  cards: AdviceCard[];
+  notices: string[];
+}
+
+/** 页面顶部“当前条件”条的数据。 */
+export interface CurrentConditions {
+  timeLabel: string;
+  temperature: number | null;
+  humidity: number | null;
+  windSpeed: number | null;
+  soilMoisture: number | null;
+  soilTemperature: number | null;
+  precipitation1h: number | null;
+  et0Today: number | null;
+}
+
+export type AdvisoryErrorCode =
+  | "locate_failed"
+  | "bad_request"
+  | "upstream_error"
+  | "internal_error";
+
+export interface AdvisorySuccess {
+  ok: true;
+  generatedAt: string;
+  location: ResolvedLocation;
+  crop: { id: string; name: string };
+  current: CurrentConditions;
+  summary: AdvisorySummary;
+  cards: AdviceCard[];
+  notices: string[];
+  source: { weather: string; cache: "HIT" | "MISS" };
+}
+
+export interface AdvisoryFailure {
+  ok: false;
+  code: AdvisoryErrorCode;
+  message: string;
+  /** 是否属于可预期降级（前端据此提示手动选择城市等）。 */
+  fallback: boolean;
+  detail?: string;
+}
+
+export type AdvisoryResponse = AdvisorySuccess | AdvisoryFailure;

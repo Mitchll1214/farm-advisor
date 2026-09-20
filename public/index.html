@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>农忙参谋 · 农事建议</title>
+    <meta
+      name="description"
+      content="根据你所在位置的气象与土壤数据，自动生成灌溉、霜冻、生长度日、干旱趋势、喷洒窗口与水分盈亏等中文农事建议。"
+    />
+    <meta name="theme-color" content="#1f6f4a" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="stylesheet" href="/style.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌾</text></svg>"
+    />
+  </head>
+  <body>
+    <header class="hero">
+      <div class="hero__inner">
+        <div class="brand">
+          <span class="brand__mark" aria-hidden="true">🌾</span>
+          <div class="brand__text">
+            <h1 class="brand__name">农忙参谋</h1>
+            <p class="brand__tagline">按所在地块位置，给出灌溉、霜冻、积温、干旱与作业窗口建议</p>
+          </div>
+        </div>
+        <div class="hero__actions">
+          <button id="refresh-btn" class="btn btn--ghost" type="button">
+            <span aria-hidden="true">⟳</span> 刷新
+          </button>
+          <button id="city-btn" class="btn btn--solid" type="button">切换城市</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <section class="location" aria-label="位置与作物">
+        <div class="location__item location__item--grow">
+          <span class="location__label">当前定位</span>
+          <strong id="location-name" class="location__value">定位中…</strong>
+          <span id="location-meta" class="location__meta"></span>
+        </div>
+        <div class="location__item">
+          <label class="location__label" for="crop-select">作物</label>
+          <select id="crop-select" class="select">
+            <option value="general">通用大田作物</option>
+            <option value="corn">玉米</option>
+            <option value="wheat">冬小麦</option>
+            <option value="rice">水稻</option>
+            <option value="soybean">大豆</option>
+            <option value="potato">马铃薯</option>
+            <option value="tomato">番茄</option>
+            <option value="rapeseed">油菜</option>
+            <option value="cotton">棉花</option>
+            <option value="apple">苹果</option>
+          </select>
+        </div>
+      </section>
+
+      <section id="summary-panel" class="summary" hidden aria-live="polite"></section>
+
+      <section id="conditions-panel" class="conditions" hidden aria-label="当前气象条件"></section>
+
+      <div id="notices" class="notices" hidden></div>
+
+      <section id="cards" class="cards" aria-live="polite"></section>
+
+      <section id="state" class="state">
+        <p class="state__title">正在获取位置与气象数据…</p>
+        <p class="state__desc">首次加载需要调用气象数据源，通常 1–3 秒完成。</p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer__inner">
+        <p class="disclaimer">
+          <strong>免责声明</strong>：本站建议由公开气象与土壤模式数据自动生成，仅供农事决策参考，
+          不构成专业农艺指导，不能替代实地查勘、土壤检测与当地植保/农技部门的意见。
+          请结合田间实际情况判断后使用。
+        </p>
+
+        <details class="privacy">
+          <summary>隐私说明</summary>
+          <p>
+            本站不设账号、不使用追踪 Cookie，也不收集个人身份信息。<br />
+            为实现“自动定位”，服务端会读取 Cloudflare 提供的访问者 IP 粗定位信息（省/市与经纬度，
+            精度约城市级），仅用于向气象数据源请求对应位置的天气；该信息不会被写入数据库或用于其他用途。<br />
+            你手动选择的城市只保存在本机浏览器的 localStorage 中，点“切换城市 → 使用我的网络位置”
+            即可清除。
+          </p>
+        </details>
+
+        <p class="footer__meta">
+          数据来源 <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>（CC BY 4.0）
+          · 本站为非商业用途 · 免费额度内运行
+        </p>
+      </div>
+    </footer>
+
+    <div id="city-sheet" class="sheet" hidden>
+      <div class="sheet__backdrop" data-sheet-close></div>
+      <div class="sheet__panel" role="dialog" aria-modal="true" aria-labelledby="city-sheet-title">
+        <header class="sheet__head">
+          <h2 id="city-sheet-title" class="sheet__title">切换城市</h2>
+          <button class="sheet__close" type="button" data-sheet-close aria-label="关闭">×</button>
+        </header>
+
+        <form id="city-form" class="sheet__search">
+          <input
+            id="city-input"
+            class="input"
+            type="search"
+            name="q"
+            placeholder="输入城市或区县名，如：潍坊、昌邑"
+            autocomplete="off"
+            enterkeyhint="search"
+          />
+          <button class="btn btn--solid" type="submit">搜索</button>
+        </form>
+
+        <p id="city-hint" class="sheet__hint">
+          定位不准时，可在此手动指定位置；选择结果会保存在本机浏览器中。
+        </p>
+        <ul id="city-results" class="results"></ul>
+
+        <button id="use-ip" class="btn btn--ghost btn--block" type="button">
+          使用我的网络位置（清除手动选择）
+        </button>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

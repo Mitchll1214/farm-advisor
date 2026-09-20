@@ -1,0 +1,10 @@
+# 农忙参谋 — Cloudflare Pages 配置
+#
+# 说明：
+# - 静态资源目录为 public/，Pages Functions 位于根目录 functions/（Cloudflare 固定要求，不支持自定义路径）。
+# - functions/ 下的 .ts 会由 wrangler 用 esbuild 自动打包，无需额外构建步骤。
+# - 无需 KV / D1 / R2，缓存使用运行时 Cache API，全部在免费额度内。
+
+name = "farm-advisor"
+compatibility_date = "2025-09-01"
+pages_build_output_dir = "public"
