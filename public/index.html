@@ -67,6 +67,16 @@
             <option value="rapeseed">油菜</option>
             <option value="cotton">棉花</option>
             <option value="apple">苹果</option>
+            <option value="peanut">花生</option>
+            <option value="sesame">芝麻</option>
+            <option value="sweetpotato">甘薯</option>
+            <option value="sorghum">高粱</option>
+            <option value="millet">谷子</option>
+            <option value="sugarcane">甘蔗</option>
+            <option value="sunflower">向日葵</option>
+            <option value="tobacco">烟叶</option>
+            <option value="tea">茶</option>
+            <option value="citrus">柑橘</option>
           </select>
         </div>
 
@@ -100,9 +110,11 @@
           <summary>隐私说明</summary>
           <p>
             本站不设账号、不使用追踪 Cookie，也不收集个人身份信息。<br />
-            为实现“自动定位”，服务端会读取 Cloudflare 提供的访问者 IP 粗定位信息（省/市与经纬度，
-            精度约城市级），仅用于判断所在省份、向气象数据源请求对应位置的天气；该信息不会被写入数据库或用于其他用途。<br />
-            你手动选择的城市只保存在本机浏览器的 localStorage 中，点“切换城市 → 使用我的网络位置”
+            默认情况下，服务端读取 Cloudflare 提供的访问者 IP 粗定位信息（省/市与经纬度，精度约城市级），
+            仅用于判断所在省份、向气象数据源请求对应位置的天气；该信息不会被写入数据库或用于其他用途。<br />
+            点“使用本机定位”时，位置由你的浏览器直接提供（精度可达几十米，坐标系为 WGS84），
+            需要你在浏览器里授权；拒绝授权不影响使用，只是退回网络定位。该坐标仅在本次请求中发往本站服务端用于取数。<br />
+            你手动选择的城市只保存在本机浏览器的 localStorage 中，点“切换城市 → 使用网络位置”
             即可清除。
           </p>
         </details>
@@ -140,9 +152,14 @@
         </p>
         <ul id="city-results" class="results"></ul>
 
-        <button id="use-ip" class="btn btn--ghost btn--block" type="button">
-          使用我的网络位置（清除手动选择）
-        </button>
+        <div class="sheet__actions">
+          <button id="use-device" class="btn btn--solid btn--block" type="button">
+            使用本机定位（浏览器定位，最准）
+          </button>
+          <button id="use-ip" class="btn btn--ghost btn--block" type="button">
+            使用网络位置（清除手动选择）
+          </button>
+        </div>
       </div>
     </div>
 

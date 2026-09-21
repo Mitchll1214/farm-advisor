@@ -34,6 +34,7 @@ const els = {
   sheetHint: document.getElementById("city-hint"),
   sheetResults: document.getElementById("city-results"),
   useIp: document.getElementById("use-ip"),
+  useDevice: document.getElementById("use-device"),
   toast: document.getElementById("toast"),
 };
 
@@ -75,11 +76,15 @@ function readStoredLocation() {
   const lon = Number(value.lon);
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
   if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+  const device = value.source === "device";
+  const accuracy = Number(value.accuracy);
   return {
-    name: typeof value.name === "string" && value.name ? value.name : "手动位置",
+    name: typeof value.name === "string" && value.name ? value.name : device ? "本机定位" : "手动位置",
     region: typeof value.region === "string" ? value.region : "",
     lat,
     lon,
+    source: device ? "device" : "manual",
+    accuracy: device && Number.isFinite(accuracy) ? accuracy : null,
   };
 }
 
@@ -117,6 +122,8 @@ async function load(options = {}) {
     params.set("lon", state.location.lon.toFixed(4));
     if (state.location.name) params.set("city", state.location.name);
     if (state.location.region) params.set("region", state.location.region);
+    // 本机定位：坐标来自设备，服务端据此区分来源并保留省份兜底。
+    if (state.location.source === "device") params.set("src", "device");
   }
   // 自动模式不传 crop：由服务端按所在省份与当前月份选取当季作物；手动选择时显式指定。
   if (state.crop && state.crop !== CROP_DEFAULT) params.set("crop", state.crop);
@@ -217,9 +224,16 @@ function renderLocation(data) {
 
   const parts = [];
   if (location.region && location.region !== location.name) parts.push(location.region);
-  parts.push(location.source === "manual" ? "手动选择" : "网络定位");
+  parts.push(
+    location.source === "device" ? "本机定位" : location.source === "manual" ? "手动选择" : "网络定位",
+  );
   if (Number.isFinite(location.lat) && Number.isFinite(location.lon)) {
     parts.push(`${location.lat.toFixed(2)}, ${location.lon.toFixed(2)}`);
+  }
+  const accuracy =
+    state.location && state.location.source === "device" ? state.location.accuracy : null;
+  if (typeof accuracy === "number" && Number.isFinite(accuracy)) {
+    parts.push(`精度约 ${Math.round(accuracy)} 米`);
   }
   if (data.crop && data.crop.name) parts.push(data.crop.name);
   els.locationMeta.textContent = parts.join(" · ");
@@ -233,6 +247,9 @@ function renderCropSelection(data) {
   const notes = [];
   if (selection && selection.reason) notes.push(selection.reason);
   if (selection && selection.auto === false) notes.push("下拉框可切回「自动（按地区当季）」");
+  if (selection && selection.auto === true && !data.region) {
+    notes.push("未能识别省份：在「切换城市」里选择所在城市后，作物与地区参数会自动跟上");
+  }
 
   if (notes.length > 0) {
     els.cropNote.textContent = notes.join(" · ");
@@ -463,6 +480,51 @@ function renderSearchResult(result) {
   return item;
 }
 
+/* ---------- 本机定位（浏览器 Geolocation，WGS84，与气象数据同一坐标系） ---------- */
+
+const GEO_OPTIONS = {
+  enableHighAccuracy: true,
+  timeout: 10000,
+  maximumAge: 5 * 60 * 1000,
+};
+
+function useDeviceLocation() {
+  if (!("geolocation" in navigator)) {
+    els.sheetHint.textContent = "当前浏览器不支持本机定位，请手动搜索城市。";
+    return;
+  }
+  els.sheetHint.textContent = "正在获取本机位置…首次使用浏览器会询问定位授权。";
+  navigator.geolocation.getCurrentPosition(handleDevicePosition, handleDeviceError, GEO_OPTIONS);
+}
+
+function handleDevicePosition(position) {
+  const coords = (position && position.coords) || {};
+  const lat = Number(coords.latitude);
+  const lon = Number(coords.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    els.sheetHint.textContent = "拿到的位置不完整，请手动搜索城市。";
+    return;
+  }
+
+  const rawAccuracy = Number(coords.accuracy);
+  const accuracy = Number.isFinite(rawAccuracy) ? Math.round(rawAccuracy) : null;
+  state.location = { name: "本机定位", region: "", lat, lon, source: "device", accuracy };
+  writeJson(STORAGE_KEYS.location, state.location);
+  closeCitySheet();
+  showToast(accuracy === null ? "已使用本机定位" : `已使用本机定位（精度约 ${accuracy} 米）`);
+  load();
+}
+
+function handleDeviceError(error) {
+  const code = error && typeof error.code === "number" ? error.code : 0;
+  const messages = {
+    1: "定位权限被拒绝：可在浏览器的站点权限里允许定位，或直接搜索城市。",
+    2: "系统暂时无法给出位置，请手动搜索城市。",
+    3: "定位超时，请重试或手动搜索城市。",
+  };
+  els.sheetHint.textContent = messages[code] || "本机定位不可用，请手动搜索城市。";
+}
+
 /* ---------- 交互绑定 ---------- */
 
 function showToast(message) {
@@ -518,6 +580,8 @@ function bindEvents() {
     showToast("已恢复使用网络定位");
     load();
   });
+
+  els.useDevice.addEventListener("click", useDeviceLocation);
 }
 
 /** 支持用 ?lat=&lon=&city= 直接指定位置，方便测试与分享。 */

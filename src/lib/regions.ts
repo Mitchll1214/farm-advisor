@@ -10,6 +10,8 @@
  *   - 作物结构与熟制按《中国农业统计年鉴》分省主要农作物播种面积、全国种植业区划
  *     与各省栽培技术规程的经验整理值，**是量级排序而非精确统计**；用于给出一个
  *     可被用户随时覆盖的默认值，不代表某地块的真实种植情况。
+ *   - seasons[].crops 的顺序即当季优先级：第一位是自动推荐的首选，其余作为备选作物
+ *     出现在页面上。多年生作物（茶、柑橘、苹果）排在同季作物之后，不会抢当季首选。
  *   - 土壤参数按各区主要土类的经验范围取值，**未接入 SoilGrids 等土壤数据库**。
  *   - 有效降水系数按降水强度与径流特征分区取值：湿润区低于半干旱区。
  *   - 病虫害优先级只标注"该地区是否需要重点盯防"，不改变各模型的温湿阈值本身。
@@ -38,7 +40,7 @@ export const REGIONS: RegionProfile[] = [
     croppingSystem: "一年两熟",
     seasons: [
       { label: "冬小麦季", crops: ["wheat"], months: [10, 11, 12, 1, 2, 3, 4, 5] },
-      { label: "夏玉米季", crops: ["corn", "soybean"], months: [6, 7, 8, 9] },
+      { label: "夏播季", crops: ["corn", "soybean", "peanut"], months: [6, 7, 8, 9] },
     ],
     overrides: { fieldCapacity: 0.3, wiltingPoint: 0.13, effectiveRainFactor: 0.8 },
     soilNote: "华北潮土/褐土，壤质为主",
@@ -53,7 +55,7 @@ export const REGIONS: RegionProfile[] = [
     croppingSystem: "一年两熟",
     seasons: [
       { label: "冬小麦季", crops: ["wheat"], months: [10, 11, 12, 1, 2, 3, 4, 5] },
-      { label: "夏玉米季", crops: ["corn", "soybean"], months: [6, 7, 8, 9] },
+      { label: "夏播季", crops: ["corn", "soybean"], months: [6, 7, 8, 9] },
     ],
     overrides: { fieldCapacity: 0.3, wiltingPoint: 0.13, effectiveRainFactor: 0.8 },
     soilNote: "滨海潮土，局部盐渍化",
@@ -68,11 +70,11 @@ export const REGIONS: RegionProfile[] = [
     croppingSystem: "一年两熟（坝上一年一熟）",
     seasons: [
       { label: "冬小麦季", crops: ["wheat"], months: [10, 11, 12, 1, 2, 3, 4, 5] },
-      { label: "夏玉米季", crops: ["corn", "soybean"], months: [6, 7, 8, 9] },
+      { label: "夏播季", crops: ["corn", "peanut", "soybean", "sweetpotato"], months: [6, 7, 8, 9] },
     ],
     overrides: { fieldCapacity: 0.31, wiltingPoint: 0.14, effectiveRainFactor: 0.85 },
     soilNote: "潮土与褐土，山前平原壤质",
-    pestPriority: ["corn_borer", "wheat_aphid", "cotton_bollworm"],
+    pestPriority: ["corn_borer", "wheat_aphid", "cotton_bollworm", "peanut_leafspot"],
   },
   {
     code: "SX",
@@ -82,12 +84,12 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "黄土高原",
     croppingSystem: "一年一熟与两年三熟",
     seasons: [
-      { label: "春播玉米季", crops: ["corn", "potato"], months: [4, 5, 6, 7, 8, 9, 10] },
+      { label: "春播季", crops: ["corn", "millet", "sorghum", "potato"], months: [4, 5, 6, 7, 8, 9, 10] },
       { label: "冬小麦季（南部）", crops: ["wheat"], months: [11, 12, 1, 2, 3] },
     ],
     overrides: { fieldCapacity: 0.28, wiltingPoint: 0.12, effectiveRainFactor: 0.9 },
     soilNote: "黄土与褐土，土层深厚、易旱",
-    pestPriority: ["corn_borer", "wheat_aphid", "potato_ladybird"],
+    pestPriority: ["corn_borer", "wheat_aphid", "potato_ladybird", "millet_smut"],
   },
   {
     code: "NM",
@@ -97,11 +99,11 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "内蒙古高原",
     croppingSystem: "一年一熟",
     seasons: [
-      { label: "春播作物季", crops: ["corn", "potato", "rapeseed"], months: [4, 5, 6, 7, 8, 9, 10] },
+      { label: "春播季", crops: ["corn", "sunflower", "potato", "millet", "rapeseed"], months: [4, 5, 6, 7, 8, 9, 10] },
     ],
     overrides: { fieldCapacity: 0.27, wiltingPoint: 0.12, effectiveRainFactor: 0.9 },
     soilNote: "栗钙土与草甸土，风蚀与旱情突出",
-    pestPriority: ["corn_borer", "potato_ladybird"],
+    pestPriority: ["corn_borer", "potato_ladybird", "sunflower_sclerotinia"],
   },
   {
     code: "LN",
@@ -111,11 +113,11 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "东北平原南部",
     croppingSystem: "一年一熟",
     seasons: [
-      { label: "春播作物季", crops: ["corn", "rice", "soybean"], months: [4, 5, 6, 7, 8, 9, 10] },
+      { label: "春播季", crops: ["corn", "peanut", "rice", "soybean"], months: [4, 5, 6, 7, 8, 9, 10] },
     ],
     overrides: { fieldCapacity: 0.32, wiltingPoint: 0.15, effectiveRainFactor: 0.85 },
     soilNote: "棕壤与草甸土，保水较好",
-    pestPriority: ["corn_borer", "rice_blast", "soybean_aphid"],
+    pestPriority: ["corn_borer", "rice_blast", "soybean_aphid", "peanut_leafspot"],
   },
   {
     code: "JL",
@@ -125,7 +127,7 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "东北平原中部",
     croppingSystem: "一年一熟",
     seasons: [
-      { label: "春播作物季", crops: ["corn", "rice", "soybean"], months: [4, 5, 6, 7, 8, 9, 10] },
+      { label: "春播季", crops: ["corn", "rice", "soybean"], months: [4, 5, 6, 7, 8, 9, 10] },
     ],
     overrides: { fieldCapacity: 0.33, wiltingPoint: 0.15, effectiveRainFactor: 0.85 },
     soilNote: "黑土与黑钙土，保水性强",
@@ -139,7 +141,7 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "东北平原北部",
     croppingSystem: "一年一熟",
     seasons: [
-      { label: "春播作物季", crops: ["soybean", "corn", "rice"], months: [5, 6, 7, 8, 9, 10] },
+      { label: "春播季", crops: ["soybean", "corn", "rice"], months: [5, 6, 7, 8, 9, 10] },
     ],
     overrides: { fieldCapacity: 0.34, wiltingPoint: 0.16, effectiveRainFactor: 0.85 },
     soilNote: "东北黑土，保水性强、无霜期短",
@@ -183,12 +185,12 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "长江中下游南部",
     croppingSystem: "一年两熟至三熟",
     seasons: [
-      { label: "水稻季", crops: ["rice"], months: [4, 5, 6, 7, 8, 9, 10] },
+      { label: "水稻季", crops: ["rice", "tea", "citrus"], months: [4, 5, 6, 7, 8, 9, 10] },
       { label: "冬作季", crops: ["rapeseed", "wheat"], months: [11, 12, 1, 2, 3] },
     ],
     overrides: { fieldCapacity: 0.35, wiltingPoint: 0.16, effectiveRainFactor: 0.75 },
     soilNote: "红壤与水稻土，山区土层偏薄",
-    pestPriority: ["rice_blast", "rice_planthopper", "rapeseed_sclerotinia"],
+    pestPriority: ["rice_blast", "rice_planthopper", "rapeseed_sclerotinia", "tea_leafhopper", "citrus_redmite"],
   },
   {
     code: "AH",
@@ -198,12 +200,12 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "长江中下游与黄淮海过渡",
     croppingSystem: "一年两熟（稻麦/稻油）",
     seasons: [
-      { label: "水稻季", crops: ["rice"], months: [5, 6, 7, 8, 9] },
+      { label: "水稻季", crops: ["rice", "peanut"], months: [5, 6, 7, 8, 9] },
       { label: "冬小麦季", crops: ["wheat", "rapeseed"], months: [10, 11, 12, 1, 2, 3, 4] },
     ],
     overrides: { fieldCapacity: 0.34, wiltingPoint: 0.16, effectiveRainFactor: 0.78 },
     soilNote: "砂姜黑土与水稻土，淮北易涝",
-    pestPriority: ["wheat_scab", "rice_blast", "rice_planthopper"],
+    pestPriority: ["wheat_scab", "rice_blast", "rice_planthopper", "peanut_leafspot"],
   },
   {
     code: "FJ",
@@ -213,12 +215,12 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "华南丘陵",
     croppingSystem: "一年两熟至三熟",
     seasons: [
-      { label: "水稻季", crops: ["rice"], months: [3, 4, 5, 6, 7, 8, 9, 10] },
+      { label: "水稻季", crops: ["rice", "tea", "citrus"], months: [3, 4, 5, 6, 7, 8, 9, 10] },
       { label: "冬作季", crops: ["potato", "rapeseed"], months: [11, 12, 1, 2] },
     ],
     overrides: { fieldCapacity: 0.33, wiltingPoint: 0.16, effectiveRainFactor: 0.7 },
     soilNote: "红壤与水稻土，酸性偏粘",
-    pestPriority: ["rice_planthopper", "rice_blast", "potato_blight"],
+    pestPriority: ["rice_planthopper", "rice_blast", "potato_blight", "tea_leafhopper", "citrus_canker"],
   },
   {
     code: "JX",
@@ -228,12 +230,12 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "长江中下游南部",
     croppingSystem: "一年两熟至三熟（双季稻）",
     seasons: [
-      { label: "双季稻季", crops: ["rice"], months: [4, 5, 6, 7, 8, 9, 10] },
+      { label: "双季稻季", crops: ["rice", "peanut", "tea", "citrus"], months: [4, 5, 6, 7, 8, 9, 10] },
       { label: "冬作季", crops: ["rapeseed"], months: [11, 12, 1, 2, 3] },
     ],
     overrides: { fieldCapacity: 0.34, wiltingPoint: 0.16, effectiveRainFactor: 0.75 },
     soilNote: "红壤与水稻土，丘陵梯田多",
-    pestPriority: ["rice_blast", "rice_planthopper", "rapeseed_sclerotinia"],
+    pestPriority: ["rice_blast", "rice_planthopper", "rapeseed_sclerotinia", "citrus_canker", "tea_leafhopper"],
   },
   {
     code: "SD",
@@ -244,11 +246,11 @@ export const REGIONS: RegionProfile[] = [
     croppingSystem: "一年两熟",
     seasons: [
       { label: "冬小麦季", crops: ["wheat"], months: [10, 11, 12, 1, 2, 3, 4, 5] },
-      { label: "夏玉米季", crops: ["corn", "soybean"], months: [6, 7, 8, 9] },
+      { label: "夏播季", crops: ["corn", "peanut", "soybean"], months: [6, 7, 8, 9] },
     ],
     overrides: { fieldCapacity: 0.31, wiltingPoint: 0.14, effectiveRainFactor: 0.82 },
     soilNote: "潮土与棕壤，胶东丘陵偏砂",
-    pestPriority: ["corn_borer", "wheat_aphid", "apple_moth", "cotton_bollworm"],
+    pestPriority: ["corn_borer", "wheat_aphid", "apple_moth", "cotton_bollworm", "peanut_leafspot"],
   },
   {
     code: "HA",
@@ -259,11 +261,15 @@ export const REGIONS: RegionProfile[] = [
     croppingSystem: "一年两熟",
     seasons: [
       { label: "冬小麦季", crops: ["wheat"], months: [10, 11, 12, 1, 2, 3, 4, 5] },
-      { label: "夏玉米季", crops: ["corn", "soybean"], months: [6, 7, 8, 9] },
+      {
+        label: "夏播季",
+        crops: ["corn", "peanut", "sesame", "sweetpotato", "soybean"],
+        months: [6, 7, 8, 9],
+      },
     ],
     overrides: { fieldCapacity: 0.31, wiltingPoint: 0.14, effectiveRainFactor: 0.82 },
     soilNote: "潮土与砂姜黑土，豫西丘陵偏旱",
-    pestPriority: ["wheat_aphid", "corn_borer", "wheat_scab"],
+    pestPriority: ["wheat_aphid", "corn_borer", "wheat_scab", "peanut_leafspot", "sesame_wilt"],
   },
   {
     code: "HB",
@@ -273,12 +279,12 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "长江中游",
     croppingSystem: "一年两熟（稻油/稻麦）",
     seasons: [
-      { label: "水稻季", crops: ["rice"], months: [5, 6, 7, 8, 9] },
+      { label: "水稻季", crops: ["rice", "peanut", "sesame"], months: [5, 6, 7, 8, 9] },
       { label: "冬作季", crops: ["rapeseed", "wheat"], months: [10, 11, 12, 1, 2, 3, 4] },
     ],
     overrides: { fieldCapacity: 0.34, wiltingPoint: 0.16, effectiveRainFactor: 0.78 },
     soilNote: "水稻土与黄棕壤，江汉平原壤质",
-    pestPriority: ["rice_blast", "rapeseed_sclerotinia", "rice_planthopper"],
+    pestPriority: ["rice_blast", "rapeseed_sclerotinia", "rice_planthopper", "peanut_leafspot", "sesame_wilt"],
   },
   {
     code: "HN",
@@ -288,12 +294,12 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "长江中游南部",
     croppingSystem: "一年两熟至三熟（双季稻）",
     seasons: [
-      { label: "双季稻季", crops: ["rice"], months: [4, 5, 6, 7, 8, 9, 10] },
+      { label: "双季稻季", crops: ["rice", "peanut", "citrus", "tea"], months: [4, 5, 6, 7, 8, 9, 10] },
       { label: "冬作季", crops: ["rapeseed"], months: [11, 12, 1, 2, 3] },
     ],
     overrides: { fieldCapacity: 0.34, wiltingPoint: 0.16, effectiveRainFactor: 0.75 },
     soilNote: "红壤与水稻土，丘陵区易渍",
-    pestPriority: ["rice_planthopper", "rice_blast", "rapeseed_sclerotinia"],
+    pestPriority: ["rice_planthopper", "rice_blast", "rapeseed_sclerotinia", "citrus_redmite", "tea_leafhopper"],
   },
   {
     code: "GD",
@@ -303,13 +309,13 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "华南",
     croppingSystem: "一年三熟",
     seasons: [
-      { label: "早稻季", crops: ["rice"], months: [3, 4, 5, 6, 7] },
-      { label: "晚稻季", crops: ["rice"], months: [7, 8, 9, 10, 11] },
+      { label: "早稻季", crops: ["rice", "peanut"], months: [3, 4, 5, 6, 7] },
+      { label: "晚稻季", crops: ["rice", "citrus"], months: [7, 8, 9, 10, 11] },
       { label: "冬种季", crops: ["potato", "rapeseed"], months: [11, 12, 1, 2] },
     ],
     overrides: { fieldCapacity: 0.33, wiltingPoint: 0.16, effectiveRainFactor: 0.7 },
     soilNote: "砖红壤与水稻土，雨强径流大",
-    pestPriority: ["rice_planthopper", "rice_blast", "potato_blight"],
+    pestPriority: ["rice_planthopper", "rice_blast", "potato_blight", "citrus_canker", "citrus_redmite"],
   },
   {
     code: "GX",
@@ -319,12 +325,16 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "华南西部",
     croppingSystem: "一年三熟",
     seasons: [
-      { label: "水稻季", crops: ["rice"], months: [3, 4, 5, 6, 7, 8, 9, 10, 11] },
+      {
+        label: "水稻季",
+        crops: ["rice", "sugarcane", "citrus", "peanut"],
+        months: [3, 4, 5, 6, 7, 8, 9, 10, 11],
+      },
       { label: "冬种季", crops: ["potato", "rapeseed"], months: [11, 12, 1, 2] },
     ],
     overrides: { fieldCapacity: 0.33, wiltingPoint: 0.16, effectiveRainFactor: 0.72 },
     soilNote: "红壤与石灰土，喀斯特区土层薄",
-    pestPriority: ["rice_planthopper", "rice_blast"],
+    pestPriority: ["sugarcane_borer", "rice_planthopper", "rice_blast", "sugarcane_smut", "citrus_canker"],
   },
   {
     code: "HI",
@@ -349,12 +359,12 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "四川盆地东部",
     croppingSystem: "一年两熟至三熟",
     seasons: [
-      { label: "水稻季", crops: ["rice", "corn"], months: [4, 5, 6, 7, 8, 9] },
+      { label: "水稻季", crops: ["rice", "corn", "citrus"], months: [4, 5, 6, 7, 8, 9] },
       { label: "冬作季", crops: ["rapeseed", "wheat"], months: [10, 11, 12, 1, 2, 3] },
     ],
     overrides: { fieldCapacity: 0.33, wiltingPoint: 0.15, effectiveRainFactor: 0.75 },
     soilNote: "紫色土与水稻土，丘陵坡耕地多",
-    pestPriority: ["rice_blast", "rice_planthopper", "rapeseed_sclerotinia"],
+    pestPriority: ["rice_blast", "rice_planthopper", "rapeseed_sclerotinia", "citrus_canker", "citrus_redmite"],
   },
   {
     code: "SC",
@@ -364,12 +374,12 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "四川盆地",
     croppingSystem: "一年两熟",
     seasons: [
-      { label: "水稻季", crops: ["rice"], months: [4, 5, 6, 7, 8, 9] },
+      { label: "水稻季", crops: ["rice", "citrus", "peanut"], months: [4, 5, 6, 7, 8, 9] },
       { label: "冬作季", crops: ["wheat", "rapeseed"], months: [10, 11, 12, 1, 2, 3] },
     ],
     overrides: { fieldCapacity: 0.33, wiltingPoint: 0.15, effectiveRainFactor: 0.78 },
     soilNote: "紫色土与水稻土，盆地日照少",
-    pestPriority: ["rice_blast", "rapeseed_sclerotinia", "wheat_aphid"],
+    pestPriority: ["rice_blast", "rapeseed_sclerotinia", "citrus_canker", "wheat_aphid", "citrus_redmite"],
   },
   {
     code: "GZ",
@@ -379,12 +389,16 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "云贵高原东部",
     croppingSystem: "一年两熟",
     seasons: [
-      { label: "水稻与玉米季", crops: ["rice", "corn"], months: [4, 5, 6, 7, 8, 9, 10] },
-      { label: "冬作季", crops: ["rapeseed", "potato"], months: [11, 12, 1, 2, 3] },
+      {
+        label: "水稻与玉米季",
+        crops: ["rice", "corn", "sweetpotato", "tobacco"],
+        months: [4, 5, 6, 7, 8, 9, 10],
+      },
+      { label: "冬作季", crops: ["rapeseed", "potato", "tea"], months: [11, 12, 1, 2, 3] },
     ],
     overrides: { fieldCapacity: 0.32, wiltingPoint: 0.15, effectiveRainFactor: 0.75 },
     soilNote: "黄壤与石灰土，坡地土层薄",
-    pestPriority: ["rice_blast", "potato_blight", "rapeseed_sclerotinia"],
+    pestPriority: ["rice_blast", "tobacco_blackshank", "potato_blight", "rapeseed_sclerotinia", "tea_leafhopper"],
   },
   {
     code: "YN",
@@ -394,12 +408,16 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "云贵高原西部",
     croppingSystem: "一年两熟至三熟",
     seasons: [
-      { label: "水稻与玉米季", crops: ["rice", "corn"], months: [4, 5, 6, 7, 8, 9, 10] },
+      {
+        label: "水稻与玉米季",
+        crops: ["rice", "corn", "tobacco", "sugarcane", "tea", "sweetpotato"],
+        months: [4, 5, 6, 7, 8, 9, 10],
+      },
       { label: "冬作季", crops: ["potato", "rapeseed"], months: [11, 12, 1, 2, 3] },
     ],
     overrides: { fieldCapacity: 0.32, wiltingPoint: 0.15, effectiveRainFactor: 0.75 },
     soilNote: "红壤与紫色土，干湿季分明",
-    pestPriority: ["potato_blight", "rice_blast", "wheat_aphid"],
+    pestPriority: ["tobacco_blackshank", "potato_blight", "rice_blast", "sugarcane_borer", "tea_leafhopper"],
   },
   {
     code: "XZ",
@@ -409,7 +427,7 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "青藏高原",
     croppingSystem: "一年一熟",
     seasons: [
-      { label: "春播作物季", crops: ["wheat", "rapeseed"], months: [4, 5, 6, 7, 8, 9, 10] },
+      { label: "春播季", crops: ["wheat", "rapeseed"], months: [4, 5, 6, 7, 8, 9, 10] },
     ],
     overrides: { fieldCapacity: 0.28, wiltingPoint: 0.12, effectiveRainFactor: 0.85 },
     soilNote: "高山草甸土与潮土，日照强、蒸发大",
@@ -424,11 +442,11 @@ export const REGIONS: RegionProfile[] = [
     croppingSystem: "关中一年两熟，陕北一年一熟",
     seasons: [
       { label: "冬小麦季", crops: ["wheat"], months: [10, 11, 12, 1, 2, 3, 4, 5] },
-      { label: "夏玉米季", crops: ["corn"], months: [6, 7, 8, 9] },
+      { label: "夏播季", crops: ["corn", "millet", "sorghum"], months: [6, 7, 8, 9] },
     ],
     overrides: { fieldCapacity: 0.29, wiltingPoint: 0.13, effectiveRainFactor: 0.88 },
     soilNote: "黄土与塿土，渭北旱塬易旱",
-    pestPriority: ["wheat_aphid", "corn_borer", "apple_moth"],
+    pestPriority: ["wheat_aphid", "corn_borer", "apple_moth", "millet_smut"],
   },
   {
     code: "GS",
@@ -438,11 +456,11 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "西北干旱区",
     croppingSystem: "一年一熟",
     seasons: [
-      { label: "春播作物季", crops: ["potato", "corn", "wheat"], months: [4, 5, 6, 7, 8, 9, 10] },
+      { label: "春播季", crops: ["potato", "corn", "sunflower", "millet", "wheat"], months: [4, 5, 6, 7, 8, 9, 10] },
     ],
     overrides: { fieldCapacity: 0.27, wiltingPoint: 0.11, effectiveRainFactor: 0.9 },
     soilNote: "灰钙土与黄绵土，灌溉依赖度高",
-    pestPriority: ["potato_ladybird", "potato_blight", "wheat_aphid"],
+    pestPriority: ["potato_ladybird", "sunflower_sclerotinia", "potato_blight", "wheat_aphid"],
   },
   {
     code: "QH",
@@ -452,7 +470,7 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "青藏高原东北部",
     croppingSystem: "一年一熟",
     seasons: [
-      { label: "春播作物季", crops: ["rapeseed", "potato", "wheat"], months: [4, 5, 6, 7, 8, 9] },
+      { label: "春播季", crops: ["rapeseed", "potato", "wheat"], months: [4, 5, 6, 7, 8, 9] },
     ],
     overrides: { fieldCapacity: 0.28, wiltingPoint: 0.12, effectiveRainFactor: 0.86 },
     soilNote: "栗钙土与高山土，无霜期短",
@@ -466,11 +484,11 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "西北干旱区",
     croppingSystem: "一年一熟",
     seasons: [
-      { label: "春播作物季", crops: ["corn", "potato", "wheat"], months: [4, 5, 6, 7, 8, 9, 10] },
+      { label: "春播季", crops: ["corn", "sunflower", "potato", "millet", "wheat"], months: [4, 5, 6, 7, 8, 9, 10] },
     ],
     overrides: { fieldCapacity: 0.27, wiltingPoint: 0.11, effectiveRainFactor: 0.9 },
     soilNote: "灌淤土与灰钙土，引黄灌区为主",
-    pestPriority: ["corn_borer", "potato_ladybird", "wheat_aphid"],
+    pestPriority: ["corn_borer", "sunflower_sclerotinia", "potato_ladybird", "wheat_aphid"],
   },
   {
     code: "XJ",
@@ -480,11 +498,11 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "西北干旱区",
     croppingSystem: "一年一熟",
     seasons: [
-      { label: "春播作物季", crops: ["cotton", "corn", "wheat"], months: [4, 5, 6, 7, 8, 9, 10] },
+      { label: "春播季", crops: ["cotton", "corn", "sunflower", "wheat"], months: [4, 5, 6, 7, 8, 9, 10] },
     ],
     overrides: { fieldCapacity: 0.26, wiltingPoint: 0.11, effectiveRainFactor: 0.9 },
     soilNote: "灰漠土与灌淤土，光热足、降水极少",
-    pestPriority: ["cotton_bollworm", "cotton_aphid", "corn_borer"],
+    pestPriority: ["cotton_bollworm", "cotton_aphid", "corn_borer", "sunflower_sclerotinia"],
   },
   {
     code: "TW",
@@ -494,12 +512,12 @@ export const REGIONS: RegionProfile[] = [
     climateZone: "华南与热带",
     croppingSystem: "一年两熟至三熟",
     seasons: [
-      { label: "水稻季", crops: ["rice"], months: [3, 4, 5, 6, 7, 8, 9, 10] },
+      { label: "水稻季", crops: ["rice", "tea", "peanut"], months: [3, 4, 5, 6, 7, 8, 9, 10] },
       { label: "冬作季", crops: ["tomato", "potato"], months: [11, 12, 1, 2] },
     ],
     overrides: { fieldCapacity: 0.33, wiltingPoint: 0.16, effectiveRainFactor: 0.7 },
     soilNote: "冲积土与红壤，多雨、台风影响大",
-    pestPriority: ["rice_planthopper", "rice_blast", "tomato_whitefly"],
+    pestPriority: ["rice_planthopper", "rice_blast", "tea_leafhopper", "tomato_whitefly"],
   },
   {
     code: "HK",
@@ -591,7 +609,7 @@ export interface CropRecommendation {
 /**
  * 按地区 + 月份推荐作物：当季窗口内的作物优先，其后是该地区其它季节的作物。
  */
-export function recommendCrops(region: RegionProfile, month: number, limit = 3): CropRecommendation {
+export function recommendCrops(region: RegionProfile, month: number, limit = 4): CropRecommendation {
   const season = seasonForMonth(region, month);
   const ordered: string[] = [];
 

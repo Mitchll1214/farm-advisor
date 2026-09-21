@@ -52,7 +52,7 @@ const CACHE_HOST = "https://advisony.internal";
 const IP_CLIENT_MAX_AGE = 300;
 const WEATHER_SOURCE = "Open-Meteo";
 /** 自动选取作物时最多回传几个备选。 */
-const MAX_ALTERNATIVES = 2;
+const MAX_ALTERNATIVES = 3;
 
 /** 缓存体：不含任何请求者相关信息。 */
 interface CachedAdvisony {
@@ -84,10 +84,12 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   }
   const params = url.searchParams;
 
-  // 1. 定位：query 参数优先（用户手动切换城市），否则用 Cloudflare 的 IP 粗定位。
+  // 1. 定位：query 参数优先（手动切换城市或浏览器本机定位），否则用 Cloudflare 的 IP 粗定位。
   const queryLat = parseCoord(params.get("lat"), -90, 90);
   const queryLon = parseCoord(params.get("lon"), -180, 180);
   const manual = queryLat !== null && queryLon !== null;
+  /** 浏览器本机定位：坐标来自设备（精度远高于 IP），行政区仍借用网络定位的省份兜底。 */
+  const device = manual && sanitizeText(params.get("src"), 12).toLowerCase() === "device";
   const cf = readCfGeo(request);
 
   const lat = manual ? queryLat : parseCoord(cf.latitude, -90, 90);
@@ -99,21 +101,26 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
 
   const queryCity = sanitizeText(params.get("city"), 40);
   const queryRegion = sanitizeText(params.get("region"), 40);
-  const city = queryCity || sanitizeText(cf.city, 40) || sanitizeText(cf.region, 40) || "当前位置";
-  const regionText = queryRegion || sanitizeText(cf.region, 40);
+  const cfCity = sanitizeText(cf.city, 40);
+  const cfRegion = sanitizeText(cf.region, 40);
+
+  // 本机定位时不展示网络定位推断出的城市名，避免"地点显示在 A、坐标却在 B"的误导。
+  const city = queryCity || (device ? "本机定位" : cfCity || cfRegion || "当前位置");
+  const displayRegion = queryRegion || (device ? "" : cfRegion);
 
   const locationBase: LocationBase = {
     name: city,
-    region: regionText,
+    region: displayRegion,
     lat: round(lat, 4),
     lon: round(lon, 4),
-    source: manual ? "manual" : "ip",
+    source: manual ? (device ? "device" : "manual") : "ip",
   };
 
-  // 2. 地区：IP 场景优先用 Cloudflare 的 regionCode；手动场景只用用户给的地名。
+  // 2. 地区：IP 场景优先用 Cloudflare 的 regionCode；手动选城市时只用用户给的地名；
+  //    本机定位仍保留省份兜底（设备与网络出口通常同省，识别失败时前端会提示手动修正）。
   const match = matchRegion({
-    regionCode: manual ? null : cf.regionCode,
-    region: regionText,
+    regionCode: manual && !device ? null : cf.regionCode,
+    region: queryRegion || cfRegion,
   });
   const regionProfile: RegionProfile | null = match?.region ?? null;
   const month = localMonth(lon, regionProfile);

@@ -205,7 +205,8 @@ export interface ResolvedLocation {
   region: string;
   lat: number;
   lon: number;
-  source: "ip" | "manual";
+  /** ip = 网络粗定位；manual = 手动选择城市；device = 浏览器本机定位。 */
+  source: "ip" | "manual" | "device";
   timezone: string;
 }
 
