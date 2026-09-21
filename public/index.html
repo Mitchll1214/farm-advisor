@@ -6,29 +6,40 @@
     <title>农忙参谋 · 农事建议</title>
     <meta
       name="description"
-      content="根据你所在位置的气象与土壤数据，自动生成灌溉、霜冻、生长度日、干旱趋势、喷洒窗口与水分盈亏等中文农事建议。"
+      content="按所在地块位置自动识别当季作物，并给出灌溉、霜冻、生长度日、干旱趋势、喷洒窗口与水分盈亏等中文农事建议。"
     />
     <meta name="theme-color" content="#1f6f4a" />
     <meta name="color-scheme" content="light dark" />
     <link rel="stylesheet" href="/style.css" />
     <link
       rel="icon"
-      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌾</text></svg>"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M16 30V9' stroke='%231f6f4a' stroke-width='2.4' fill='none' stroke-linecap='round'/><ellipse cx='16' cy='13' rx='3.2' ry='6' fill='%231f6f4a'/><path d='M16 25c-5-2-7-6-7-11M16 25c5-2 7-6 7-11' stroke='%231f6f4a' stroke-width='2' fill='none' stroke-linecap='round'/></svg>"
     />
   </head>
   <body>
     <header class="hero">
       <div class="hero__inner">
         <div class="brand">
-          <span class="brand__mark" aria-hidden="true">🌾</span>
+          <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+            <path d="M16 30V9" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" />
+            <ellipse cx="16" cy="13" rx="3.1" ry="5.8" fill="currentColor" />
+            <path d="M16 25c-5-2-7-6-7-11M16 25c5-2 7-6 7-11" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" />
+            <path d="M16 6.5c1.8 1.6 2.6 3.4 2.5 5.4M16 6.5c-1.8 1.6-2.6 3.4-2.5 5.4" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" opacity="0.7" />
+          </svg>
           <div class="brand__text">
             <h1 class="brand__name">农忙参谋</h1>
-            <p class="brand__tagline">按所在地块位置，给出灌溉、霜冻、积温、干旱与作业窗口建议</p>
+            <p class="brand__tagline">
+              按所在地块位置自动识别当季作物，给出灌溉、霜冻、积温、干旱与作业窗口建议
+            </p>
           </div>
         </div>
         <div class="hero__actions">
           <button id="refresh-btn" class="btn btn--ghost" type="button">
-            <span aria-hidden="true">⟳</span> 刷新
+            <svg class="btn__icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <path d="M13.5 8a5.5 5.5 0 1 1-1.9-4.16" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" />
+              <path d="M13.9 2.2v3.1h-3.1" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            刷新
           </button>
           <button id="city-btn" class="btn btn--solid" type="button">切换城市</button>
         </div>
@@ -45,6 +56,7 @@
         <div class="location__item">
           <label class="location__label" for="crop-select">作物</label>
           <select id="crop-select" class="select">
+            <option value="auto">自动（按地区当季）</option>
             <option value="general">通用大田作物</option>
             <option value="corn">玉米</option>
             <option value="wheat">冬小麦</option>
@@ -57,6 +69,9 @@
             <option value="apple">苹果</option>
           </select>
         </div>
+
+        <p id="crop-note" class="location__note" hidden></p>
+        <div id="crop-alt" class="crop-alt" hidden></div>
       </section>
 
       <section id="summary-panel" class="summary" hidden aria-live="polite"></section>
@@ -76,8 +91,8 @@
     <footer class="footer">
       <div class="footer__inner">
         <p class="disclaimer">
-          <strong>免责声明</strong>：本站建议由公开气象与土壤模式数据自动生成，仅供农事决策参考，
-          不构成专业农艺指导，不能替代实地查勘、土壤检测与当地植保/农技部门的意见。
+          <strong>免责声明</strong>：本站建议由公开气象与土壤模式数据自动生成，作物与地区参数为经验整理值，
+          仅供参考，不构成专业农艺指导，不能替代实地查勘、土壤检测与当地植保/农技部门的意见。
           请结合田间实际情况判断后使用。
         </p>
 
@@ -86,7 +101,7 @@
           <p>
             本站不设账号、不使用追踪 Cookie，也不收集个人身份信息。<br />
             为实现“自动定位”，服务端会读取 Cloudflare 提供的访问者 IP 粗定位信息（省/市与经纬度，
-            精度约城市级），仅用于向气象数据源请求对应位置的天气；该信息不会被写入数据库或用于其他用途。<br />
+            精度约城市级），仅用于判断所在省份、向气象数据源请求对应位置的天气；该信息不会被写入数据库或用于其他用途。<br />
             你手动选择的城市只保存在本机浏览器的 localStorage 中，点“切换城市 → 使用我的网络位置”
             即可清除。
           </p>
@@ -94,7 +109,7 @@
 
         <p class="footer__meta">
           数据来源 <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>（CC BY 4.0）
-          · 本站为非商业用途 · 免费额度内运行
+          · 作物与地区参数按公开统计与区划资料经验整理 · 本站为非商业用途
         </p>
       </div>
     </footer>

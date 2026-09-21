@@ -6,14 +6,15 @@
  */
 
 import type { AdviceCard, AdviceLevel, AdvisoryContext } from "../lib/types";
+import { rainFactorOf } from "../lib/regions";
 import { dateLabel, fmt, fmtSigned, isValid, makeCard, todayIndex } from "../lib/util";
 
 const HORIZON_DAYS = 7;
-/** 有效降水系数：一次降水中真正进入根区的比例。 */
-const EFFECTIVE_RAIN_FACTOR = 0.8;
 
 export function waterBalanceAdvice(ctx: AdvisoryContext): AdviceCard {
   const { crop, weather } = ctx;
+  // 有效降水系数按地区取：湿润区径流损失大，取值低于半干旱区。
+  const rainFactor = rainFactorOf(ctx.region);
   const daily = weather.daily;
   const today = todayIndex(daily.time, weather.localDate);
   const length = daily.time.length;
@@ -33,7 +34,7 @@ export function waterBalanceAdvice(ctx: AdvisoryContext): AdviceCard {
     const et0 = daily.et0[i];
     if (!isValid(rain) || !isValid(et0)) continue;
 
-    const effectiveRain = rain * EFFECTIVE_RAIN_FACTOR;
+    const effectiveRain = rain * rainFactor;
     const etc = et0 * crop.kc;
     const balance = effectiveRain - etc;
 
@@ -81,7 +82,8 @@ export function waterBalanceAdvice(ctx: AdvisoryContext): AdviceCard {
     },
   ];
 
-  const reason = `未来 ${balances.length} 天按有效降水系数 ${EFFECTIVE_RAIN_FACTOR}、作物系数 Kc ${crop.kc}（${crop.name}）逐日核算：有效降水 ${fmt(precipTotal, 1, "mm")}、作物蒸散 ETc ${fmt(etcTotal, 1, "mm")}，净盈亏 ${fmtSigned(cumulative, 1, "mm")}（累计亏缺 ${fmt(deficitTotal, 1, "mm")}、累计盈余 ${fmt(surplusTotal, 1, "mm")}）。`;
+  const regionText = ctx.region ? `（有效降水系数按${ctx.region.name}取 ${rainFactor}）` : "";
+  const reason = `未来 ${balances.length} 天按有效降水系数 ${rainFactor}、作物系数 Kc ${crop.kc}（${crop.name}）逐日核算${regionText}：有效降水 ${fmt(precipTotal, 1, "mm")}、作物蒸散 ETc ${fmt(etcTotal, 1, "mm")}，净盈亏 ${fmtSigned(cumulative, 1, "mm")}（累计亏缺 ${fmt(deficitTotal, 1, "mm")}、累计盈余 ${fmt(surplusTotal, 1, "mm")}）。`;
 
   if (level === "ok") {
     return makeCard({

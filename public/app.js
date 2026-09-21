@@ -9,7 +9,7 @@ const STORAGE_KEYS = {
   lastForce: "nmcm.lastForce",
 };
 
-const CROP_DEFAULT = "general";
+const CROP_DEFAULT = "auto";
 /** 手动刷新冷却时间，避免用户连续点刷新消耗上游免费额度。 */
 const FORCE_COOLDOWN_MS = 60 * 1000;
 
@@ -21,6 +21,8 @@ const els = {
   locationName: document.getElementById("location-name"),
   locationMeta: document.getElementById("location-meta"),
   cropSelect: document.getElementById("crop-select"),
+  cropNote: document.getElementById("crop-note"),
+  cropAlt: document.getElementById("crop-alt"),
   summary: document.getElementById("summary-panel"),
   conditions: document.getElementById("conditions-panel"),
   notices: document.getElementById("notices"),
@@ -116,6 +118,7 @@ async function load(options = {}) {
     if (state.location.name) params.set("city", state.location.name);
     if (state.location.region) params.set("region", state.location.region);
   }
+  // 自动模式不传 crop：由服务端按所在省份与当前月份选取当季作物；手动选择时显式指定。
   if (state.crop && state.crop !== CROP_DEFAULT) params.set("crop", state.crop);
   if (force) params.set("force", "1");
   const query = params.toString();
@@ -158,6 +161,7 @@ function showLoading() {
 function render(data) {
   els.state.hidden = true;
   renderLocation(data);
+  renderCropSelection(data);
   renderSummary(data);
   renderConditions(data);
   renderNotices(data);
@@ -219,6 +223,57 @@ function renderLocation(data) {
   }
   if (data.crop && data.crop.name) parts.push(data.crop.name);
   els.locationMeta.textContent = parts.join(" · ");
+}
+
+/* ---------- 作物选取依据（地区自动选取 or 手动指定） ---------- */
+
+function renderCropSelection(data) {
+  const selection = data.selection && typeof data.selection === "object" ? data.selection : null;
+
+  const notes = [];
+  if (selection && selection.reason) notes.push(selection.reason);
+  if (selection && selection.auto === false) notes.push("下拉框可切回「自动（按地区当季）」");
+
+  if (notes.length > 0) {
+    els.cropNote.textContent = notes.join(" · ");
+    els.cropNote.hidden = false;
+  } else {
+    els.cropNote.hidden = true;
+  }
+
+  const alternatives = selection && Array.isArray(selection.alternatives) ? selection.alternatives : [];
+  const usable = alternatives.filter((item) => item && typeof item.id === "string");
+  if (usable.length === 0) {
+    els.cropAlt.hidden = true;
+    els.cropAlt.replaceChildren();
+    return;
+  }
+
+  const buttons = usable.map((item) => {
+    const label = typeof item.name === "string" && item.name ? item.name : item.id;
+    const button = el("button", "chip", label);
+    button.type = "button";
+    button.addEventListener("click", () => {
+      selectCrop(item.id);
+      showToast(`已切换到 ${label}`);
+    });
+    return button;
+  });
+
+  els.cropAlt.replaceChildren(el("span", "crop-alt__label", "同季作物"), ...buttons);
+  els.cropAlt.hidden = false;
+}
+
+/** 手动切换作物：写入本机存储后重新加载，让服务端按新作物重算。 */
+function selectCrop(cropId) {
+  state.crop = cropId || CROP_DEFAULT;
+  try {
+    window.localStorage.setItem(STORAGE_KEYS.crop, state.crop);
+  } catch {
+    /* 忽略：不影响本次使用 */
+  }
+  els.cropSelect.value = state.crop;
+  load();
 }
 
 function renderSummary(data) {
@@ -438,13 +493,7 @@ function bindEvents() {
   els.cityBtn.addEventListener("click", openCitySheet);
 
   els.cropSelect.addEventListener("change", () => {
-    state.crop = els.cropSelect.value || CROP_DEFAULT;
-    try {
-      window.localStorage.setItem(STORAGE_KEYS.crop, state.crop);
-    } catch {
-      /* 忽略 */
-    }
-    load();
+    selectCrop(els.cropSelect.value || CROP_DEFAULT);
   });
 
   els.sheet.addEventListener("click", (event) => {

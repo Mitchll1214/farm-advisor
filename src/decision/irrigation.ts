@@ -8,6 +8,7 @@
  */
 
 import type { AdviceCard, AdvisoryContext } from "../lib/types";
+import { rainFactorOf } from "../lib/regions";
 import { clamp, fmt, isValid, makeCard, round, sum, windowOf } from "../lib/util";
 
 /** 各土壤湿度层的厚度权重（cm）。 */
@@ -50,7 +51,9 @@ export function irrigationAdvice(ctx: AdvisoryContext): AdviceCard {
   const et0Next24 = sum(windowOf(hourly.et0, index, 24));
   const rainNext24 = sum(windowOf(hourly.precipitation, index, 24));
   const etcNext24 = isValid(et0Next24) ? et0Next24 * crop.kc : NaN;
-  const effectiveRain24 = isValid(rainNext24) ? rainNext24 * 0.8 : NaN;
+  // 有效降水系数按地区取：湿润区径流损失大，取值低于半干旱区。
+  const rainFactor = rainFactorOf(ctx.region);
+  const effectiveRain24 = isValid(rainNext24) ? rainNext24 * rainFactor : NaN;
   const netDemand = Math.max(0, (isValid(etcNext24) ? etcNext24 : 0) - (isValid(effectiveRain24) ? effectiveRain24 : 0));
 
   const fcPercent = round(crop.fieldCapacity * 100, 0);

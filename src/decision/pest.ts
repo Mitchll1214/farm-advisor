@@ -27,13 +27,20 @@ interface PestHit {
   pest: PestModel;
   level: AdviceLevel;
   gdd: number;
+  /** 是否为所在地区的重点监测对象；无地区信息时为 null。 */
+  regional: boolean | null;
 }
 
 export function pestAdvice(ctx: AdvisoryContext): AdviceCard {
-  const { crop, weather } = ctx;
+  const { crop, region, weather } = ctx;
   const daily = weather.daily;
   const hourly = weather.hourly;
   const today = todayIndex(daily.time, weather.localDate);
+
+  // 地区重点监测对象：有该地区档案时，命中优先、并在条件刚好达标时提升一档；
+  // 非本地区主要对象的命中则降一档，避免在全国口径下报出与当地无关的风险。
+  const priority = new Set(region?.pestPriority ?? []);
+  const regionalWeighting = priority.size > 0;
 
   const windowStart = Math.max(0, today - TEMP_WINDOW_DAYS);
   const tMax = avg(daily.tMax.slice(windowStart, today));
@@ -90,10 +97,24 @@ export function pestAdvice(ctx: AdvisoryContext): AdviceCard {
     // 非需湿型：大雨冲刷会压低虫口，下调一级。
     if (!pest.needsWet && isValid(rain3) && rain3 >= WASHOUT_MM && level === "warn") level = "watch";
 
-    hits.push({ pest, level, gdd: gddValue });
+    // 地区加权：只在本地区重点监测名单内的对象，才允许升到「预警」；
+    // 名单外的对象即使温湿条件吻合也压回「关注」，等级上限仍为 warn。
+    let regional: boolean | null = null;
+    if (regionalWeighting) {
+      regional = priority.has(pest.id);
+      if (regional && level === "watch") level = "warn";
+      else if (!regional && level === "warn") level = "watch";
+    }
+
+    hits.push({ pest, level, gdd: gddValue, regional });
   }
 
-  hits.sort((a, b) => (a.level === b.level ? 0 : a.level === "warn" ? -1 : 1));
+  hits.sort((a, b) => {
+    if (a.level !== b.level) return a.level === "warn" ? -1 : 1;
+    const aPriority = a.regional === true ? 0 : 1;
+    const bPriority = b.regional === true ? 0 : 1;
+    return aPriority - bPriority;
+  });
   const topHit = hits[0];
 
   if (!topHit) {
@@ -119,19 +140,27 @@ export function pestAdvice(ctx: AdvisoryContext): AdviceCard {
     .map((hit) => {
       const condition = `适宜区间 ${hit.pest.tempMin}–${hit.pest.tempMax} ℃、湿度 ≥ ${hit.pest.humidityMin}%`;
       const gddText = isValid(hit.gdd) ? `，近 ${GDD_WINDOW_DAYS} 天积温 ${fmt(hit.gdd, 0, "GDD")}（基点 ${hit.pest.baseTemp} ℃）` : "";
-      return `${hit.pest.name}：${condition}${gddText}`;
+      const regionalTag =
+        region && hit.regional !== null
+          ? hit.regional
+            ? `（${region.name}重点监测对象）`
+            : `（非${region.name}主要监测对象，仅供参考）`
+          : "";
+      return `${hit.pest.name}：${condition}${gddText}${regionalTag}`;
     })
     .join("；");
 
   const actions = hits.slice(0, 3).map((hit) => hit.pest.advice);
   actions.push("以田块实际调查结果为准，达到当地防治指标后再用药");
 
+  const weightingText = region ? `，并按${region.name}的重点监测名单加权` : "";
+
   return makeCard({
     id: "pest",
     category: "病虫害风险",
     level,
     headline: `气象条件有利于${names}发生发展`,
-    reason: `近 3 天平均气温 ${fmt(meanTemp, 1, "℃")}、近 72 小时平均相对湿度 ${fmt(humidity, 0, "%")}、累计降水 ${fmt(rain3, 1, "mm")}，达到以下模型的适宜发生条件——${detail}。本提示为气象驱动的风险推断，没有接入田块虫情与测报数据，不能替代田间调查。`,
+    reason: `近 3 天平均气温 ${fmt(meanTemp, 1, "℃")}、近 72 小时平均相对湿度 ${fmt(humidity, 0, "%")}、累计降水 ${fmt(rain3, 1, "mm")}，达到以下模型的适宜发生条件——${detail}。本提示为气象驱动的风险推断${weightingText}，没有接入田块虫情与区域测报数据，不能替代田间调查。`,
     actions,
     metrics: [
       ...metricsCommon,

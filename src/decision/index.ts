@@ -51,11 +51,16 @@ export function generateAdvisory(ctx: AdvisoryContext): AdvisoryResult {
 /** 数据质量与口径提示，前端以"提示条"形式展示。 */
 function buildNotices(ctx: AdvisoryContext): string[] {
   const notices: string[] = [];
-  const { crop, weather } = ctx;
+  const { crop, region, weather } = ctx;
   const hourly = weather.hourly;
 
   if (validCount(hourly.soilMoisture3to9) === 0 && validCount(hourly.soilMoisture9to27) === 0) {
     notices.push("本区域没有可用的分层土壤湿度数据，灌溉建议已退化为降水与蒸散的水量平衡估算。");
+  }
+  if (region) {
+    notices.push(
+      `土壤水文参数已按${region.name}（${region.climateZone}）主要土类修正：${region.soilNote}；有效降水系数取 ${region.overrides.effectiveRainFactor ?? 0.8}。`,
+    );
   }
   if (weather.degradedVariables) {
     notices.push("部分农业气象变量本次不可用，建议已用核心变量降级生成，精度低于常规情况。");
@@ -64,7 +69,11 @@ function buildNotices(ctx: AdvisoryContext): string[] {
     notices.push("历史逐日数据不足，干旱趋势与积温结果的可靠性下降。");
   }
   if (crop.id === "general") {
-    notices.push("当前按「通用大田作物」阈值计算，在页面上选择具体作物后建议会更贴合。");
+    notices.push(
+      region
+        ? `未识别到${region.name}当季的主栽作物，当前按「通用大田作物」阈值计算，选择具体作物后建议会更贴合。`
+        : "未能识别所在省份，当前按「通用大田作物」全国经验阈值计算；在页面上选择具体作物、或手动指定所在城市后，建议会更贴合。",
+    );
   }
   if (notices.length === 0) {
     notices.push("建议基于公开气象与土壤模式数据自动生成，仅供参考。");

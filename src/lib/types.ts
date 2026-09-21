@@ -138,6 +138,67 @@ export interface CropProfile {
   pests: PestModel[];
 }
 
+/** 地区季节窗口：该地区某一季主要种植什么、这些作物在田的月份。 */
+export interface SeasonWindow {
+  label: string;
+  /** 作物 id，按当季重要性排序，与 src/lib/crops.ts 的 CROPS 一致。 */
+  crops: string[];
+  /** 在地月份（1–12）。 */
+  months: number[];
+}
+
+/**
+ * 地区参数覆盖：只包含确实随地理变化的量。
+ * 作物自身的生理参数（基点温度、Kc、霜冻阈值）不随地区改变，因此不在此覆盖。
+ */
+export interface RegionOverrides {
+  /** 该地区主要土类的田间持水量 m³/m³。 */
+  fieldCapacity?: number;
+  /** 该地区主要土类的凋萎点 m³/m³。 */
+  wiltingPoint?: number;
+  /** 有效降水系数：降水真正进入根区的比例，湿润区低于半干旱区。 */
+  effectiveRainFactor?: number;
+}
+
+/** 省级地区档案，见 src/lib/regions.ts。 */
+export interface RegionProfile {
+  /** ISO 3166-2 短码，与 Cloudflare request.cf.regionCode 对应，如 SD。 */
+  code: string;
+  name: string;
+  short: string;
+  aliases: string[];
+  climateZone: string;
+  croppingSystem: string;
+  seasons: SeasonWindow[];
+  overrides: RegionOverrides;
+  /** 主要土类说明，会写进灌溉卡片的原因里。 */
+  soilNote: string;
+  /** 该地区重点监测的病虫害 id（对应 CropProfile.pests[].id）。 */
+  pestPriority: string[];
+}
+
+/** 响应中的地区信息：本次建议所采用的地区口径。 */
+export interface RegionInfo {
+  code: string;
+  name: string;
+  climateZone: string;
+  croppingSystem: string;
+  soilNote: string;
+  effectiveRainFactor: number;
+  /** 省份是从哪个字段认出来的。 */
+  matchedBy: "region_code" | "region_name";
+}
+
+/** 自动选取作物的依据，前端据此展示"为什么默认给这个作物"。 */
+export interface CropSelection {
+  /** 是否为自动选取（false 表示用户手动指定）。 */
+  auto: boolean;
+  reason: string;
+  seasonLabel: string | null;
+  /** 该地区同季的备选作物，供一键切换。 */
+  alternatives: { id: string; name: string }[];
+}
+
 /** 定位结果。 */
 export interface ResolvedLocation {
   name: string;
@@ -151,6 +212,8 @@ export interface ResolvedLocation {
 /** 决策模块的统一输入。 */
 export interface AdvisoryContext {
   location: ResolvedLocation;
+  /** 命中的省级地区档案；未识别到省份时为 null（按作物档案的全国经验值计算）。 */
+  region: RegionProfile | null;
   crop: CropProfile;
   weather: WeatherBundle;
 }
@@ -191,6 +254,10 @@ export interface AdvisorySuccess {
   generatedAt: string;
   location: ResolvedLocation;
   crop: { id: string; name: string };
+  /** 本次建议采用的地区口径；未识别到省份时为 null。 */
+  region: RegionInfo | null;
+  /** 作物是自动选取还是用户指定，以及自动选取的依据。 */
+  selection: CropSelection | null;
   current: CurrentConditions;
   summary: AdvisorySummary;
   cards: AdviceCard[];
