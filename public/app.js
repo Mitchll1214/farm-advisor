@@ -223,7 +223,15 @@ function renderLocation(data) {
   els.locationName.textContent = location.name || "当前位置";
 
   const parts = [];
-  if (location.region && location.region !== location.name) parts.push(location.region);
+  const regionInfo = data.region && typeof data.region === "object" ? data.region : null;
+  const regionLabel =
+    (typeof location.region === "string" && location.region) ||
+    (regionInfo && typeof regionInfo.name === "string" ? regionInfo.name : "");
+  if (regionLabel && regionLabel !== location.name) {
+    // 坐标反查得到的省份标注来源，方便用户判断准不准。
+    parts.push(regionInfo && regionInfo.matchedBy === "reverse_geocode" ? `${regionLabel}（按坐标识别）` : regionLabel);
+  }
+
   parts.push(
     location.source === "device" ? "本机定位" : location.source === "manual" ? "手动选择" : "网络定位",
   );

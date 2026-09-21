@@ -185,8 +185,8 @@ export interface RegionInfo {
   croppingSystem: string;
   soilNote: string;
   effectiveRainFactor: number;
-  /** 省份是从哪个字段认出来的。 */
-  matchedBy: "region_code" | "region_name";
+  /** 省份是怎么认出来的：IP 省码 / 地名匹配 / 坐标反查。 */
+  matchedBy: "region_code" | "region_name" | "reverse_geocode";
 }
 
 /** 自动选取作物的依据，前端据此展示"为什么默认给这个作物"。 */
