@@ -105,8 +105,30 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   const cfCity = sanitizeText(cf.city, 40);
   const cfRegion = sanitizeText(cf.region, 40);
 
-  // 本机定位时不展示网络定位推断出的城市名，避免"地点显示在 A、坐标却在 B"的误导。
-  const city = queryCity || (device ? "本机定位" : cfCity || cfRegion || "当前位置");
+  // 2. 地区：手动地名 > IP 行政区（仅网络定位时可信）> 坐标反查。
+  //    本机定位与手动坐标的省份**不能**取自 IP —— 设备位置与网络出口经常不同省
+  //    （代理、蜂窝网络、企业出口），这正是"坐标对、地区错"的根因。
+  //    先解析地区：反查会返回市/县级地名，作为页面上的"数据参考地"。
+  const cache = getDefaultCache();
+  const resolvedRegion = await resolveRegion({
+    queryRegion,
+    cfRegionCode: cf.regionCode,
+    cfCity,
+    cfRegion,
+    manual,
+    lat,
+    lon,
+    cache,
+    waitUntil: (promise) => context.waitUntil(promise),
+  });
+  const regionProfile: RegionProfile | null = resolvedRegion?.profile ?? null;
+  const referencePlace = resolvedRegion?.placeName ?? "";
+  const month = localMonth(lon, regionProfile);
+
+  // 3. 定位展示：地名优先用（手选 / 反查 / 网络定位）得到的参考地。
+  //    本机定位若既没有手选地名、也没反查出地名，就如实显示"本机定位"，
+  //    不拿网络定位的城市名冒充 —— 否则用户会以为建议是按那个城市算的。
+  const city = queryCity || referencePlace || (device ? "本机定位" : cfCity || cfRegion || "当前位置");
   const displayRegion = queryRegion || (device ? "" : cfRegion);
 
   const locationBase: LocationBase = {
@@ -116,23 +138,6 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     lon: round(lon, 4),
     source: manual ? (device ? "device" : "manual") : "ip",
   };
-
-  // 2. 地区：手动地名 > IP 行政区（仅网络定位时可信）> 坐标反查。
-  //    本机定位与手动坐标的省份**不能**取自 IP —— 设备位置与网络出口经常不同省
-  //    （代理、蜂窝网络、企业出口），这正是"坐标对、地区错"的根因。
-  const cache = getDefaultCache();
-  const resolvedRegion = await resolveRegion({
-    queryRegion,
-    cfRegionCode: cf.regionCode,
-    cfRegion,
-    manual,
-    lat,
-    lon,
-    cache,
-    waitUntil: (promise) => context.waitUntil(promise),
-  });
-  const regionProfile: RegionProfile | null = resolvedRegion?.profile ?? null;
-  const month = localMonth(lon, regionProfile);
 
   // 3. 作物：默认按地区当季自动选取；显式传 crop 时以用户选择为准。
   const requestedCrop = sanitizeText(params.get("crop"), 24).toLowerCase();
@@ -155,7 +160,7 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
         "CDN-Cache-Control": "no-store",
       };
 
-  const regionInfo = buildRegionInfo(regionProfile, resolvedRegion?.matchedBy);
+  const regionInfo = buildRegionInfo(regionProfile, resolvedRegion?.matchedBy, referencePlace);
 
   // 4. 缓存：同一坐标格网（2 位小数）+ 同一作物 + 同一地区 + 同一选取方式在同一小时内共用结果。
   const hourBucket = Math.floor(Date.now() / 3_600_000);
@@ -297,21 +302,34 @@ function resolveCropForRequest(input: {
 async function resolveRegion(input: {
   queryRegion: string;
   cfRegionCode?: string;
+  cfCity: string;
   cfRegion: string;
   manual: boolean;
   lat: number;
   lon: number;
   cache: CacheLike | null;
   waitUntil: (promise: Promise<unknown>) => void;
-}): Promise<{ profile: RegionProfile; matchedBy: RegionInfo["matchedBy"] } | null> {
+}): Promise<{
+  profile: RegionProfile;
+  matchedBy: RegionInfo["matchedBy"];
+  placeName: string;
+} | null> {
   if (input.queryRegion) {
     const byName = matchRegion({ region: input.queryRegion });
-    if (byName) return { profile: byName.region, matchedBy: byName.matchedBy };
+    if (byName) {
+      return { profile: byName.region, matchedBy: byName.matchedBy, placeName: input.queryRegion };
+    }
   }
 
   if (!input.manual) {
     const byIp = matchRegion({ regionCode: input.cfRegionCode, region: input.cfRegion });
-    if (byIp) return { profile: byIp.region, matchedBy: byIp.matchedBy };
+    if (byIp) {
+      return {
+        profile: byIp.region,
+        matchedBy: byIp.matchedBy,
+        placeName: input.cfCity || input.cfRegion,
+      };
+    }
   }
 
   const reversed = await reverseRegion({
@@ -323,7 +341,14 @@ async function resolveRegion(input: {
   if (reversed) {
     const byReverse =
       matchRegion({ region: reversed.region }) ?? matchRegion({ region: reversed.detail });
-    if (byReverse) return { profile: byReverse.region, matchedBy: "reverse_geocode" };
+    if (byReverse) {
+      return {
+        profile: byReverse.region,
+        matchedBy: "reverse_geocode",
+        // 市/县级地名作为"数据参考地"，拿不到就用省级名。
+        placeName: reversed.city || reversed.region,
+      };
+    }
   }
 
   return null;
@@ -333,6 +358,7 @@ async function resolveRegion(input: {
 function buildRegionInfo(
   region: RegionProfile | null,
   matchedBy: RegionInfo["matchedBy"] | undefined,
+  placeName: string,
 ): RegionInfo | null {
   if (!region) return null;
   return {
@@ -342,6 +368,7 @@ function buildRegionInfo(
     croppingSystem: region.croppingSystem,
     soilNote: region.soilNote,
     effectiveRainFactor: rainFactorOf(region),
+    placeName,
     matchedBy: matchedBy ?? "region_name",
   };
 }

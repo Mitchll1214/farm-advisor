@@ -30,6 +30,8 @@ const USER_AGENT =
 export interface ReverseRegion {
   /** 省级名称，如"河南省"或 "Henan"；拿不到省级字段时为空串。 */
   region: string;
+  /** 市/县级地名，如"南阳市"；作为页面上"数据参考地"展示给用户核对。 */
+  city: string;
   /** 更细的地名，用于展示与二次匹配，如"河南省南阳市宛城区"。 */
   detail: string;
   /** 实际命中的数据源。 */
@@ -113,6 +115,7 @@ export function parsePhoton(payload: Record<string, unknown>): ReverseRegion | n
 
   return {
     region,
+    city: city || county || district,
     detail: [state, city, county, district].filter(Boolean).join(""),
     source: "photon",
   };
@@ -134,6 +137,7 @@ export function parseNominatim(payload: Record<string, unknown>): ReverseRegion 
 
   return {
     region,
+    city: city || county || district,
     detail: [state, city, county, district].filter(Boolean).join("") || pickText(payload.display_name),
     source: "nominatim",
   };
@@ -174,6 +178,7 @@ async function readCached(cache: CacheLike, cacheKey: string): Promise<ReverseRe
     if (!parsed || typeof parsed.region !== "string" || typeof parsed.source !== "string") return null;
     return {
       region: parsed.region,
+      city: typeof parsed.city === "string" ? parsed.city : "",
       detail: typeof parsed.detail === "string" ? parsed.detail : "",
       source: parsed.source === "nominatim" ? "nominatim" : "photon",
     };

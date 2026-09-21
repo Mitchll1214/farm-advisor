@@ -185,6 +185,8 @@ export interface RegionInfo {
   croppingSystem: string;
   soilNote: string;
   effectiveRainFactor: number;
+  /** 参考地（市/县级）地名，如"南阳市"；用于让用户核对数据是按哪里计算的。 */
+  placeName: string;
   /** 省份是怎么认出来的：IP 省码 / 地名匹配 / 坐标反查。 */
   matchedBy: "region_code" | "region_name" | "reverse_geocode";
 }

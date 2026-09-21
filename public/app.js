@@ -232,9 +232,9 @@ function renderLocation(data) {
     parts.push(regionInfo && regionInfo.matchedBy === "reverse_geocode" ? `${regionLabel}（按坐标识别）` : regionLabel);
   }
 
-  parts.push(
-    location.source === "device" ? "本机定位" : location.source === "manual" ? "手动选择" : "网络定位",
-  );
+  const sourceLabel =
+    location.source === "device" ? "本机定位" : location.source === "manual" ? "手动选择" : "网络定位";
+  if (sourceLabel !== location.name) parts.push(sourceLabel);
   if (Number.isFinite(location.lat) && Number.isFinite(location.lon)) {
     parts.push(`${location.lat.toFixed(2)}, ${location.lon.toFixed(2)}`);
   }

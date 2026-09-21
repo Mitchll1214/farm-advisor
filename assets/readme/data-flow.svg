@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="flowTitle flowDesc">
+  <title id="flowTitle">农忙参谋的数据流</title>
+  <desc id="flowDesc">五步流程：浏览器中的静态页面发起请求；服务端先做定位与地区识别（IP 省码、手动地名或按坐标反查省份，对应 34 个省级地区档案）；再向 Open-Meteo 取逐时气象、分层土壤湿度与 ET₀；交给 7 个纯函数决策模块；最终产出结论化的中文建议卡片。底部标注：同一坐标格网、省份与作物的结果缓存 1 小时。</desc>
+
+  <rect width="1200" height="300" rx="24" fill="#f7f4ec" />
+  <rect x="0.5" y="0.5" width="1199" height="299" rx="24" fill="none" stroke="#e0dacb" />
+
+  <text x="40" y="56" font-family="Georgia, 'Songti SC', 'Noto Serif SC', serif" font-size="30" font-weight="600" fill="#14533a">数据流</text>
+  <text x="152" y="56" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="20" fill="#5b6b61">静态页面 + Pages Functions，运行时零依赖</text>
+
+  <!-- 步骤卡片 -->
+  <g font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif">
+    <g transform="translate(40 92)">
+      <rect width="200" height="140" rx="10" fill="#fffdf8" stroke="#e0dacb" />
+      <text x="18" y="38" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="20" fill="#1f6f4a">浏览器</text>
+      <text x="18" y="76" font-size="20" fill="#1b2b22">静态页面</text>
+      <text x="18" y="104" font-size="20" fill="#5b6b61">无框架依赖</text>
+    </g>
+
+    <g transform="translate(270 92)">
+      <rect width="200" height="140" rx="10" fill="#fffdf8" stroke="#e0dacb" />
+      <text x="18" y="38" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="20" fill="#1f6f4a">定位与地区</text>
+      <text x="18" y="76" font-size="20" fill="#1b2b22">坐标反查省份</text>
+      <text x="18" y="104" font-size="20" fill="#5b6b61">34 个省级档案</text>
+    </g>
+
+    <g transform="translate(500 92)">
+      <rect width="200" height="140" rx="10" fill="#fffdf8" stroke="#e0dacb" />
+      <text x="18" y="38" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="20" fill="#1f6f4a">Open-Meteo</text>
+      <text x="18" y="76" font-size="20" fill="#1b2b22">逐时气象</text>
+      <text x="18" y="104" font-size="20" fill="#5b6b61">土壤湿度 · ET₀</text>
+    </g>
+
+    <g transform="translate(730 92)">
+      <rect width="200" height="140" rx="10" fill="#fffdf8" stroke="#e0dacb" />
+      <text x="18" y="38" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="20" fill="#1f6f4a">决策模块</text>
+      <text x="18" y="76" font-size="20" fill="#1b2b22">7 个纯函数</text>
+      <text x="18" y="104" font-size="20" fill="#5b6b61">灌溉 · 霜冻…</text>
+    </g>
+
+    <g transform="translate(960 92)">
+      <rect width="200" height="140" rx="10" fill="#fffdf8" stroke="#e0dacb" />
+      <text x="18" y="38" font-family="ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace" font-size="20" fill="#1f6f4a">建议卡片</text>
+      <text x="18" y="76" font-size="20" fill="#1b2b22">结论 · 原因</text>
+      <text x="18" y="104" font-size="20" fill="#5b6b61">可操作建议</text>
+    </g>
+  </g>
+
+  <!-- 步骤之间的流向箭头 -->
+  <g stroke="#b9762a" stroke-width="2" fill="none" stroke-linecap="round">
+    <path d="M244 162h18" />
+    <path d="M474 162h18" />
+    <path d="M704 162h18" />
+    <path d="M934 162h18" />
+  </g>
+  <g fill="#b9762a">
+    <path d="M262 157l7 5-7 5z" />
+    <path d="M492 157l7 5-7 5z" />
+    <path d="M722 157l7 5-7 5z" />
+    <path d="M952 157l7 5-7 5z" />
+  </g>
+
+  <text x="40" y="268" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="18" fill="#5b6b61">
+    同一坐标格网 + 省份 + 作物的结果缓存 1 小时；地区反查结果缓存 24 小时
+  </text>
+</svg>
