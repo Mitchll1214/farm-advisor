@@ -6,6 +6,7 @@
 const STORAGE_KEYS = {
   location: "nmcm.location",
   crop: "nmcm.crop",
+  sowing: "nmcm.sowing",
   lastForce: "nmcm.lastForce",
 };
 
@@ -23,6 +24,8 @@ const els = {
   cropSelect: document.getElementById("crop-select"),
   cropNote: document.getElementById("crop-note"),
   cropAlt: document.getElementById("crop-alt"),
+  sowingDate: document.getElementById("sowing-date"),
+  sowingClear: document.getElementById("sowing-clear"),
   summary: document.getElementById("summary-panel"),
   conditions: document.getElementById("conditions-panel"),
   notices: document.getElementById("notices"),
@@ -42,9 +45,15 @@ const state = {
   /** 手动选择的城市；为 null 表示使用服务端 IP 粗定位。 */
   location: readStoredLocation(),
   crop: readStoredCrop(),
+  /** 用户手动指定的播种日期（YYYY-MM-DD）；为 null 时由服务端按地区估算。 */
+  sowing: readStoredSowing(),
   loading: false,
   data: null,
 };
+
+/** /api/crops 返回的作物目录与元数据（用于分组与多年生判断）。 */
+let cropCatalog = [];
+let cropMeta = new Map();
 
 let searchToken = 0;
 let toastTimer = 0;
@@ -97,6 +106,28 @@ function readStoredCrop() {
   }
 }
 
+function isValidDateString(value) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function readStoredSowing() {
+  try {
+    const value = window.localStorage.getItem(STORAGE_KEYS.sowing);
+    return isValidDateString(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredSowing(value) {
+  try {
+    if (value) window.localStorage.setItem(STORAGE_KEYS.sowing, value);
+    else window.localStorage.removeItem(STORAGE_KEYS.sowing);
+  } catch {
+    /* 忽略：不影响本次使用 */
+  }
+}
+
 function readStoredNumber(key, fallback) {
   try {
     const raw = window.localStorage.getItem(key);
@@ -127,6 +158,8 @@ async function load(options = {}) {
   }
   // 自动模式不传 crop：由服务端按所在省份与当前月份选取当季作物；手动选择时显式指定。
   if (state.crop && state.crop !== CROP_DEFAULT) params.set("crop", state.crop);
+  // 手动输入过播种日期才传，否则由服务端按地区季节窗口估算。
+  if (state.sowing) params.set("sowing", state.sowing);
   if (force) params.set("force", "1");
   const query = params.toString();
 
@@ -258,6 +291,16 @@ function renderCropSelection(data) {
   if (selection && selection.auto === true && !data.region) {
     notes.push("未能识别省份：在「切换城市」里选择所在城市后，作物与地区参数会自动跟上");
   }
+  if (selection && selection.sowingDate) {
+    const source = selection.sowingSource === "user" ? "手动输入" : "按地区估算";
+    notes.push(`播种期 ${selection.sowingDate}（${source}）`);
+  }
+  if (selection && selection.phenology) {
+    const stage = selection.phenology;
+    notes.push(
+      `当前物候 ${stage.stageLabel}，Kc ${stage.kc}（生育进度 ${Math.round(stage.progress * 100)}%）`,
+    );
+  }
 
   if (notes.length > 0) {
     els.cropNote.textContent = notes.join(" · ");
@@ -265,6 +308,8 @@ function renderCropSelection(data) {
   } else {
     els.cropNote.hidden = true;
   }
+
+  syncSowingInput(selection);
 
   const alternatives = selection && Array.isArray(selection.alternatives) ? selection.alternatives : [];
   const usable = alternatives.filter((item) => item && typeof item.id === "string");
@@ -292,6 +337,9 @@ function renderCropSelection(data) {
 /** 手动切换作物：写入本机存储后重新加载，让服务端按新作物重算。 */
 function selectCrop(cropId) {
   state.crop = cropId || CROP_DEFAULT;
+  // 播种日期是作物相关的；切换作物时清除手动值，回到按地区估算。
+  state.sowing = null;
+  writeStoredSowing(null);
   try {
     window.localStorage.setItem(STORAGE_KEYS.crop, state.crop);
   } catch {
@@ -566,6 +614,28 @@ function bindEvents() {
     selectCrop(els.cropSelect.value || CROP_DEFAULT);
   });
 
+  els.sowingDate.addEventListener("change", () => {
+    const value = els.sowingDate.value;
+    if (!isValidDateString(value)) {
+      state.sowing = null;
+      writeStoredSowing(null);
+      showToast("播种日期格式不正确，已恢复按地区估算");
+      load();
+      return;
+    }
+    state.sowing = value;
+    writeStoredSowing(value);
+    load();
+  });
+
+  els.sowingClear.addEventListener("click", () => {
+    state.sowing = null;
+    writeStoredSowing(null);
+    els.sowingDate.value = "";
+    showToast("已恢复按地区估算播种期");
+    load();
+  });
+
   els.sheet.addEventListener("click", (event) => {
     const target = event.target;
     if (target instanceof HTMLElement && "sheetClose" in target.dataset) closeCitySheet();
@@ -592,9 +662,11 @@ function bindEvents() {
   els.useDevice.addEventListener("click", useDeviceLocation);
 }
 
-/** 支持用 ?lat=&lon=&city= 直接指定位置，方便测试与分享。 */
+/** 支持用 ?lat=&lon=&city=&sowing= 直接指定位置与播种期，方便测试与分享。 */
 function applyUrlLocation() {
   const params = new URLSearchParams(window.location.search);
+  const sowing = (params.get("sowing") || "").trim();
+  if (isValidDateString(sowing)) state.sowing = sowing;
   const lat = Number(params.get("lat"));
   const lon = Number(params.get("lon"));
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
@@ -607,13 +679,100 @@ function applyUrlLocation() {
   };
 }
 
-function init() {
+/** 当前实际用于判断“是否多年生”的作物 id：自动模式取服务端返回的作物。 */
+function currentCropId() {
+  if (state.crop && state.crop !== CROP_DEFAULT) return state.crop;
+  return state.data && state.data.crop && typeof state.data.crop.id === "string"
+    ? state.data.crop.id
+    : "";
+}
+
+function isPerennialCrop(cropId) {
+  const meta = cropMeta.get(cropId);
+  return !!(meta && meta.perennial);
+}
+
+/** 播种期输入：多年生作物隐藏；有手动值时显示清除按钮。 */
+function syncSowingInput(selection) {
+  if (!els.sowingDate) return;
+  const container = els.sowingDate.closest(".location__item--sowing");
+  const perennial = isPerennialCrop(currentCropId());
+  if (container) container.hidden = perennial;
+  if (perennial) return;
+
+  const inferred =
+    selection && typeof selection.sowingDate === "string" ? selection.sowingDate : "";
+  const value = state.sowing || inferred;
+  if (document.activeElement !== els.sowingDate && value) {
+    els.sowingDate.value = value;
+  }
+
+  const today = new Date();
+  els.sowingDate.max = today.toISOString().slice(0, 10);
+  const oldest = new Date(today.getTime() - 400 * 86_400_000);
+  els.sowingDate.min = oldest.toISOString().slice(0, 10);
+  if (els.sowingClear) els.sowingClear.hidden = !state.sowing;
+}
+
+/** 拉取作物目录并动态生成分组下拉框，避免 HTML 与 crops.ts 双份维护。 */
+async function loadCropCatalog() {
+  try {
+    const response = await fetch("/api/crops", { headers: { accept: "application/json" } });
+    const data = await response.json();
+    if (!data || data.ok !== true || !Array.isArray(data.crops)) return;
+    cropCatalog = data.crops.filter((item) => item && typeof item.id === "string");
+    cropMeta = new Map(cropCatalog.map((item) => [item.id, item]));
+    renderCropOptions(Array.isArray(data.groups) ? data.groups : []);
+  } catch {
+    // 目录加载失败时保留“自动”选项，页面仍可用自动模式。
+  }
+}
+
+function renderCropOptions(groups) {
+  if (!els.cropSelect) return;
+  const select = els.cropSelect;
+  const previous = select.value || state.crop;
+  select.replaceChildren(new Option("自动（按地区当季）", "auto"));
+
+  const byGroup = new Map();
+  for (const crop of cropCatalog) {
+    const group = typeof crop.group === "string" && crop.group ? crop.group : "其他";
+    if (!byGroup.has(group)) byGroup.set(group, []);
+    byGroup.get(group).push(crop);
+  }
+
+  const seen = new Set();
+  const appendGroup = (group) => {
+    const items = byGroup.get(group);
+    if (!items || seen.has(group)) return;
+    seen.add(group);
+    const optgroup = document.createElement("optgroup");
+    optgroup.label = group;
+    for (const crop of items) {
+      optgroup.append(new Option(crop.name || crop.id, crop.id));
+    }
+    select.append(optgroup);
+  };
+
+  for (const group of groups) appendGroup(group);
+  for (const group of byGroup.keys()) appendGroup(group);
+
+  select.value = previous;
+  if (!select.value) {
+    select.value = CROP_DEFAULT;
+    state.crop = CROP_DEFAULT;
+  }
+}
+
+async function init() {
   applyUrlLocation();
+  await loadCropCatalog();
   els.cropSelect.value = state.crop;
   if (!els.cropSelect.value) els.cropSelect.value = CROP_DEFAULT;
   state.crop = els.cropSelect.value;
 
   bindEvents();
+  syncSowingInput(null);
   load();
 }
 

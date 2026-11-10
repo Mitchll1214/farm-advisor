@@ -57,27 +57,15 @@
           <label class="location__label" for="crop-select">作物</label>
           <select id="crop-select" class="select">
             <option value="auto">自动（按地区当季）</option>
-            <option value="general">通用大田作物</option>
-            <option value="corn">玉米</option>
-            <option value="wheat">冬小麦</option>
-            <option value="rice">水稻</option>
-            <option value="soybean">大豆</option>
-            <option value="potato">马铃薯</option>
-            <option value="tomato">番茄</option>
-            <option value="rapeseed">油菜</option>
-            <option value="cotton">棉花</option>
-            <option value="apple">苹果</option>
-            <option value="peanut">花生</option>
-            <option value="sesame">芝麻</option>
-            <option value="sweetpotato">甘薯</option>
-            <option value="sorghum">高粱</option>
-            <option value="millet">谷子</option>
-            <option value="sugarcane">甘蔗</option>
-            <option value="sunflower">向日葵</option>
-            <option value="tobacco">烟叶</option>
-            <option value="tea">茶</option>
-            <option value="citrus">柑橘</option>
           </select>
+        </div>
+
+        <div class="location__item location__item--sowing">
+          <label class="location__label" for="sowing-date">播种期</label>
+          <input id="sowing-date" class="input" type="date" />
+          <button id="sowing-clear" class="btn btn--ghost btn--tiny" type="button">
+            按地区估算
+          </button>
         </div>
 
         <p id="crop-note" class="location__note" hidden></p>

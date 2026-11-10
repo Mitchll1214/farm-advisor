@@ -10,17 +10,13 @@
  */
 
 import type { AdviceCard, AdviceLevel, AdvisoryContext } from "../lib/types";
+import { dailyGdd } from "../lib/agro";
 import { avg, clamp, fmt, isValid, makeCard, sum, todayIndex } from "../lib/util";
+
+export { dailyGdd } from "../lib/agro";
 
 const PAST_DAYS = 14;
 const FUTURE_DAYS = 7;
-
-/** 单日积温（截断法）。pest.ts 复用同一公式，保证积温口径一致。 */
-export function dailyGdd(tMax: number, tMin: number, base: number, upper: number): number {
-  if (!isValid(tMax) || !isValid(tMin)) return NaN;
-  const mean = (tMax + tMin) / 2;
-  return Math.max(0, clamp(mean, base, upper) - base);
-}
 
 export function gddAdvice(ctx: AdvisoryContext): AdviceCard {
   const { crop, weather } = ctx;
@@ -72,6 +68,20 @@ export function gddAdvice(ctx: AdvisoryContext): AdviceCard {
     { label: "基准 / 上限温度", value: `${fmt(base, 0, "℃")} / ${fmt(upper, 0, "℃")}` },
   ];
 
+  const phenology = ctx.phenology;
+  if (phenology) {
+    metrics.splice(
+      3,
+      0,
+      { label: "播种以来积温", value: fmt(phenology.gddSinceSowing, 0, "GDD") },
+      { label: "全生育期参考", value: fmt(phenology.gddToMaturity, 0, "GDD") },
+      {
+        label: "当前物候",
+        value: `${phenology.stageLabel}（进度 ${fmt(phenology.progress * 100, 0, "%")}，Kc ${fmt(phenology.kc, 2)}）`,
+      },
+    );
+  }
+
   const actions: string[] = [];
   if (level === "watch" && isValid(futureRate) && futureRate < maxDailyGdd * 0.5) {
     actions.push("热量偏少，可考虑地膜或秸秆覆盖提高地温，苗期不宜过早播种");
@@ -85,7 +95,11 @@ export function gddAdvice(ctx: AdvisoryContext): AdviceCard {
   actions.push("把播种日期与逐日积温记入田间档案，可据此换算生育阶段，判断精度会明显提高");
   actions.push(`当前按 ${crop.name} 基点温度 ${fmt(base, 0, "℃")} 计算，切换作物后积温口径会随之改变`);
 
-  const reason = `采用基点温度 ${fmt(base, 0, "℃")}、上限温度 ${fmt(upper, 0, "℃")} 的截断法逐日计算：近 ${pastValues.length} 天累计 ${fmt(pastSum, 0, "GDD")}（日均 ${fmt(pastRate, 1, "GDD")}），未来 ${futureValues.length} 天预报累计 ${fmt(futureSum, 0, "GDD")}（日均 ${fmt(futureRate, 1, "GDD")}）。未接入播种日期，故不推断当前所处的生育阶段，仅反映热量收支节奏。`;
+  const phenologyReason = phenology
+    ? `已按播种日期 ${phenology.sowingDate} 累计播种以来积温 ${fmt(phenology.gddSinceSowing, 0, "GDD")}，约为全生育期 ${fmt(phenology.gddToMaturity, 0, "GDD")} 的 ${fmt(phenology.progress * 100, 0, "%")}，当前处于${phenology.stageLabel}（Kc ${fmt(phenology.kc, 2)}）。`
+    : "未提供播种日期，故不推断当前所处的生育阶段，仅反映热量收支节奏。";
+
+  const reason = `采用基点温度 ${fmt(base, 0, "℃")}、上限温度 ${fmt(upper, 0, "℃")} 的截断法逐日计算：近 ${pastValues.length} 天累计 ${fmt(pastSum, 0, "GDD")}（日均 ${fmt(pastRate, 1, "GDD")}），未来 ${futureValues.length} 天预报累计 ${fmt(futureSum, 0, "GDD")}（日均 ${fmt(futureRate, 1, "GDD")}）。${phenologyReason}`;
 
   return makeCard({
     id: "gdd",

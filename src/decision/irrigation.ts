@@ -11,11 +11,12 @@ import type { AdviceCard, AdvisoryContext } from "../lib/types";
 import { rainFactorOf } from "../lib/regions";
 import { clamp, fmt, isValid, makeCard, round, sum, windowOf } from "../lib/util";
 
-/** 各土壤湿度层的厚度权重（cm）。 */
+/** 各土壤湿度层的上/下边界（cm），按根区深度截断后加权。 */
 const LAYERS = [
-  { key: "soilMoisture0to1", depth: 1 },
-  { key: "soilMoisture3to9", depth: 6 },
-  { key: "soilMoisture9to27", depth: 18 },
+  { key: "soilMoisture0to1", top: 0, bottom: 1 },
+  { key: "soilMoisture3to9", top: 3, bottom: 9 },
+  { key: "soilMoisture9to27", top: 9, bottom: 27 },
+  { key: "soilMoisture27to81", top: 27, bottom: 81 },
 ] as const;
 
 /** 灌溉水利用系数：田间实际到达根区的水量占比。 */
@@ -27,15 +28,20 @@ const SINGLE_SHOT_LIMIT_MM = 45;
 export function rootZoneSoilMoisture(ctx: AdvisoryContext): number {
   const hourly = ctx.weather.hourly;
   const index = ctx.weather.nowIndex;
+  const rootCm = Math.max(10, ctx.crop.rootDepth * 100);
   let weighted = 0;
   let depth = 0;
 
   for (const layer of LAYERS) {
+    // 只计入根区范围内的那部分层厚；根深浅的作物不会把深层湿度算进来。
+    const thickness = Math.max(0, Math.min(layer.bottom, rootCm) - layer.top);
+    if (thickness <= 0) continue;
+
     const value = hourly[layer.key][index];
     // 只接受物理上合理的体积含水量，剔除缺测与异常值。
     if (isValid(value) && value > 0.01 && value < 0.7) {
-      weighted += value * layer.depth;
-      depth += layer.depth;
+      weighted += value * thickness;
+      depth += thickness;
     }
   }
   return depth > 0 ? weighted / depth : NaN;
@@ -47,10 +53,11 @@ export function irrigationAdvice(ctx: AdvisoryContext): AdviceCard {
   const index = weather.nowIndex;
 
   const soilMoisture = rootZoneSoilMoisture(ctx);
+  const kc = ctx.phenology?.kc ?? crop.kc;
   const taw = (crop.fieldCapacity - crop.wiltingPoint) * crop.rootDepth * 1000;
   const et0Next24 = sum(windowOf(hourly.et0, index, 24));
   const rainNext24 = sum(windowOf(hourly.precipitation, index, 24));
-  const etcNext24 = isValid(et0Next24) ? et0Next24 * crop.kc : NaN;
+  const etcNext24 = isValid(et0Next24) ? et0Next24 * kc : NaN;
   // 有效降水系数按地区取：湿润区径流损失大，取值低于半干旱区。
   const rainFactor = rainFactorOf(ctx.region);
   const effectiveRain24 = isValid(rainNext24) ? rainNext24 * rainFactor : NaN;
@@ -61,6 +68,7 @@ export function irrigationAdvice(ctx: AdvisoryContext): AdviceCard {
     { label: "根区土壤湿度", value: isValid(soilMoisture) ? `${round(soilMoisture * 100, 1)} %` : "无数据" },
     { label: "假定田间持水量", value: `${fcPercent} %` },
     { label: "未来 24h 作物蒸散 ETc", value: fmt(etcNext24, 1, "mm") },
+    { label: "当前作物系数 Kc", value: ctx.phenology ? `${fmt(kc, 2)}（${ctx.phenology.stageLabel}）` : fmt(kc, 2) },
     { label: "未来 24h 有效降水", value: fmt(effectiveRain24, 1, "mm") },
   ];
 
@@ -76,7 +84,7 @@ export function irrigationAdvice(ctx: AdvisoryContext): AdviceCard {
         netDemand >= 8
           ? `无土壤湿度实测，按水量平衡估算未来 24 小时缺水约 ${round(netDemand, 0)} mm`
           : `无土壤湿度数据，按蒸散与降水估算未来 24 小时水分基本平衡`,
-      reason: `本区域暂无分层土壤湿度数据，改用 ${crop.name} 的 ETc 与有效降水做水量平衡：未来 24 小时 ETc ${fmt(etcNext24, 1, "mm")}、有效降水 ${fmt(effectiveRain24, 1, "mm")}。土壤参数（${crop.assumptions}）仅用于估计可利用水量。`,
+      reason: `本区域暂无分层土壤湿度数据，改用 ${crop.name} 的 ETc 与有效降水做水量平衡：未来 24 小时 ETc ${fmt(etcNext24, 1, "mm")}（Kc ${fmt(kc, 2)}）、有效降水 ${fmt(effectiveRain24, 1, "mm")}。土壤参数（${crop.assumptions}）仅用于估计可利用水量。`,
       actions:
         netDemand >= 8
           ? ["结合田间观察（表土颜色、植株叶片萎蔫时间）确认墒情后再决定灌溉量", "灌溉后 2–3 天复查墒情，砂性土宜少量多次"]
@@ -104,7 +112,10 @@ export function irrigationAdvice(ctx: AdvisoryContext): AdviceCard {
   const needsWater = availableWater < refillThreshold;
   const rainWillHelp = isValid(effectiveRain24) && effectiveRain24 >= Math.max(3, (refillThreshold - availableWater) * 0.7);
 
-  const baseReason = `根区土壤体积含水量 ${round(soilMoisture * 100, 1)} %（假定田间持水量 ${fcPercent}%、凋萎点 ${round(crop.wiltingPoint * 100, 0)}%，${crop.assumptions}）；剩余有效水 ${fmt(availableWater, 0, "mm")}，灌溉触发阈值 ${fmt(refillThreshold, 0, "mm")}。未来 24 小时作物蒸散 ETc ${fmt(etcNext24, 1, "mm")}、有效降水 ${fmt(effectiveRain24, 1, "mm")}。建议灌溉量按灌溉水利用系数 ${IRRIGATION_EFFICIENCY} 折算。`;
+  const phenologyText = ctx.phenology
+    ? `当前处于${ctx.phenology.stageLabel}（播种以来 ${fmt(ctx.phenology.gddSinceSowing, 0, "GDD")}，全生育期参考 ${fmt(ctx.phenology.gddToMaturity, 0, "GDD")}），Kc 取 ${fmt(kc, 2)}`
+    : `Kc 取 ${fmt(kc, 2)}`;
+  const baseReason = `根区土壤体积含水量 ${round(soilMoisture * 100, 1)} %（假定田间持水量 ${fcPercent}%、凋萎点 ${round(crop.wiltingPoint * 100, 0)}%，${crop.assumptions}）；剩余有效水 ${fmt(availableWater, 0, "mm")}，灌溉触发阈值 ${fmt(refillThreshold, 0, "mm")}。未来 24 小时作物蒸散 ETc ${fmt(etcNext24, 1, "mm")}（${phenologyText}）、有效降水 ${fmt(effectiveRain24, 1, "mm")}。建议灌溉量按灌溉水利用系数 ${IRRIGATION_EFFICIENCY} 折算。`;
 
   if (wet) {
     return makeCard({

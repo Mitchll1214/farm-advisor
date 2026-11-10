@@ -19,6 +19,10 @@ export function waterBalanceAdvice(ctx: AdvisoryContext): AdviceCard {
   const today = todayIndex(daily.time, weather.localDate);
   const length = daily.time.length;
   const end = Math.min(length, today + HORIZON_DAYS);
+  const kc = ctx.phenology?.kc ?? crop.kc;
+  const kcLabel = ctx.phenology
+    ? `${fmt(kc, 2)}（${ctx.phenology.stageLabel}）`
+    : fmt(kc, 2);
 
   const dates: string[] = [];
   const balances: number[] = [];
@@ -35,7 +39,7 @@ export function waterBalanceAdvice(ctx: AdvisoryContext): AdviceCard {
     if (!isValid(rain) || !isValid(et0)) continue;
 
     const effectiveRain = rain * rainFactor;
-    const etc = et0 * crop.kc;
+    const etc = et0 * kc;
     const balance = effectiveRain - etc;
 
     dates.push(daily.time[i] ?? "");
@@ -74,6 +78,7 @@ export function waterBalanceAdvice(ctx: AdvisoryContext): AdviceCard {
   const metrics = [
     { label: `未来 ${balances.length} 天有效降水`, value: fmt(precipTotal, 1, "mm") },
     { label: `未来 ${balances.length} 天作物蒸散 ETc`, value: fmt(etcTotal, 1, "mm") },
+    { label: "当前作物系数 Kc", value: kcLabel },
     { label: "净盈亏", value: fmtSigned(cumulative, 1, "mm") },
     { label: "亏缺 / 盈余天数", value: `${deficitDays} / ${surplusDays} 天` },
     {
@@ -83,7 +88,7 @@ export function waterBalanceAdvice(ctx: AdvisoryContext): AdviceCard {
   ];
 
   const regionText = ctx.region ? `（有效降水系数按${ctx.region.name}取 ${rainFactor}）` : "";
-  const reason = `未来 ${balances.length} 天按有效降水系数 ${rainFactor}、作物系数 Kc ${crop.kc}（${crop.name}）逐日核算${regionText}：有效降水 ${fmt(precipTotal, 1, "mm")}、作物蒸散 ETc ${fmt(etcTotal, 1, "mm")}，净盈亏 ${fmtSigned(cumulative, 1, "mm")}（累计亏缺 ${fmt(deficitTotal, 1, "mm")}、累计盈余 ${fmt(surplusTotal, 1, "mm")}）。`;
+  const reason = `未来 ${balances.length} 天按有效降水系数 ${rainFactor}、作物系数 Kc ${kcLabel}（${crop.name}）逐日核算${regionText}：有效降水 ${fmt(precipTotal, 1, "mm")}、作物蒸散 ETc ${fmt(etcTotal, 1, "mm")}，净盈亏 ${fmtSigned(cumulative, 1, "mm")}（累计亏缺 ${fmt(deficitTotal, 1, "mm")}、累计盈余 ${fmt(surplusTotal, 1, "mm")}）。`;
 
   if (level === "ok") {
     return makeCard({

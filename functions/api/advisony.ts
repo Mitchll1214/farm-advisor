@@ -23,8 +23,9 @@
  */
 
 import { generateAdvisory, buildCurrentConditions } from "../../src/decision/index";
+import { computePhenology } from "../../src/lib/agro";
 import { resolveCrop } from "../../src/lib/crops";
-import { applyRegion, matchRegion, rainFactorOf, recommendCrops } from "../../src/lib/regions";
+import { applyRegion, matchRegion, rainFactorOf, recommendCrops, seasonForCrop } from "../../src/lib/regions";
 import { reverseRegion } from "../../src/lib/reverseGeo";
 import type { CacheLike, PagesContext } from "../../src/lib/http";
 import { getDefaultCache, jsonResponse, parseCoord, readCfGeo, sanitizeText } from "../../src/lib/http";
@@ -41,11 +42,12 @@ import type {
   RegionInfo,
   RegionProfile,
   ResolvedLocation,
+  SeasonWindow,
 } from "../../src/lib/types";
 import { round } from "../../src/lib/util";
 
 /** 缓存版本：调整响应结构或决策逻辑时递增，即可让旧缓存立即失效。 */
-const CACHE_VERSION = "v3";
+const CACHE_VERSION = "v4";
 const CACHE_TTL_SECONDS = 3600;
 /** 仅用于 Cache API 的内部 key，不对外暴露。 */
 const CACHE_HOST = "https://advisony.internal";
@@ -123,7 +125,8 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   });
   const regionProfile: RegionProfile | null = resolvedRegion?.profile ?? null;
   const referencePlace = resolvedRegion?.placeName ?? "";
-  const month = localMonth(lon, regionProfile);
+  const dateParts = localDateParts(lon, regionProfile);
+  const month = dateParts.month;
 
   // 3. 定位展示：地名优先用（手选 / 反查 / 网络定位）得到的参考地。
   //    本机定位若既没有手选地名、也没反查出地名，就如实显示"本机定位"，
@@ -140,13 +143,18 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   };
 
   // 3. 作物：默认按地区当季自动选取；显式传 crop 时以用户选择为准。
+  //    播种日期优先用 query 中的 sowing（用户手动输入），否则按地区季节窗口估算。
   const requestedCrop = sanitizeText(params.get("crop"), 24).toLowerCase();
   const auto = requestedCrop === "" || requestedCrop === "auto";
-  const { crop, selection } = resolveCropForRequest({
+  const querySowing = sanitizeText(params.get("sowing"), 10);
+  const userSowing = parseSowingDate(querySowing, dateParts.date);
+  const { crop, selection, sowingDate, sowingSource } = resolveCropForRequest({
     auto,
     requestedCrop,
     regionProfile,
     month,
+    today: dateParts.date,
+    userSowing,
   });
 
   const force = params.get("force") === "1";
@@ -162,11 +170,12 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
 
   const regionInfo = buildRegionInfo(regionProfile, resolvedRegion?.matchedBy, referencePlace);
 
-  // 4. 缓存：同一坐标格网（2 位小数）+ 同一作物 + 同一地区 + 同一选取方式在同一小时内共用结果。
+  // 4. 缓存：同一坐标格网（2 位小数）+ 同一作物 + 同一地区 + 同一选取方式 + 同一播种日期 + 同一小时。
   const hourBucket = Math.floor(Date.now() / 3_600_000);
   const cropMode = auto ? "auto" : "fixed";
   const regionKey = regionProfile ? regionProfile.code : "none";
-  const cacheKey = `${CACHE_HOST}/${CACHE_VERSION}/${crop.id}/${cropMode}/${regionKey}/${locationBase.source}/${lat.toFixed(2)}/${lon.toFixed(2)}/${hourBucket}`;
+  const sowingKey = sowingDate ?? "none";
+  const cacheKey = `${CACHE_HOST}/${CACHE_VERSION}/${crop.id}/${cropMode}/${regionKey}/${locationBase.source}/${lat.toFixed(2)}/${lon.toFixed(2)}/${sowingKey}/${hourBucket}`;
 
   if (cache && !force) {
     const cached = await readCached(cache, cacheKey);
@@ -175,10 +184,10 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     }
   }
 
-  // 5. 取数
+  // 5. 取数：有播种日期时需要覆盖播种以来的积温窗口，Open-Meteo past_days 上限 92 天。
   let weather;
   try {
-    weather = await fetchWeather(lat, lon);
+    weather = await fetchWeather(lat, lon, { pastDays: sowingDate ? 92 : 14 });
   } catch (error) {
     const detail =
       error instanceof WeatherError
@@ -189,10 +198,27 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     return failure("upstream_error", "气象数据源暂时不可用，请稍后重试。", false, detail);
   }
 
-  // 6. 决策（ctx.crop 已按地区土壤参数覆盖，ctx.region 供病虫害加权与水文系数使用）
+  // 6. 物候与决策（ctx.crop 已按地区土壤参数覆盖，ctx.region 供病虫害加权与水文系数使用）
+  const phenology = sowingDate
+    ? computePhenology({
+        crop,
+        sowingDate,
+        dates: weather.daily.time,
+        tMax: weather.daily.tMax,
+        tMin: weather.daily.tMin,
+        today: weather.localDate,
+      })
+    : null;
+  selection.phenology = phenology;
+
   const location: ResolvedLocation = { ...locationBase, timezone: weather.timezone };
-  const ctx = { location, region: regionProfile, crop, weather };
+  const ctx = { location, region: regionProfile, crop, weather, phenology };
   const { summary, cards, notices } = generateAdvisory(ctx);
+  if (sowingDate && !phenology) {
+    notices.push(
+      "播种日期早于可用气象数据窗口（或该作物未配置物候参数），本次未能推算生育阶段，Kc 使用作物档案的单值。",
+    );
+  }
 
   const bundle: CachedAdvisony = {
     generatedAt: new Date().toISOString(),
@@ -239,8 +265,15 @@ function resolveCropForRequest(input: {
   requestedCrop: string;
   regionProfile: RegionProfile | null;
   month: number;
-}): { crop: CropProfile; selection: CropSelection | null } {
-  const { auto, requestedCrop, regionProfile, month } = input;
+  today: string;
+  userSowing: string | null;
+}): {
+  crop: CropProfile;
+  selection: CropSelection;
+  sowingDate: string | null;
+  sowingSource: "user" | "region" | null;
+} {
+  const { auto, requestedCrop, regionProfile, month, today, userSowing } = input;
   const picked = regionProfile ? recommendCrops(regionProfile, month) : null;
 
   const alternatives = (picked?.alternatives ?? [])
@@ -249,15 +282,20 @@ function resolveCropForRequest(input: {
 
   if (!auto) {
     const crop = applyRegion(resolveCrop(requestedCrop), regionProfile);
+    const season = regionProfile ? seasonForCrop(regionProfile, crop.id, month) : null;
+    const sowing = resolveSowing({ crop, season, userSowing, today, month });
     const selection: CropSelection = {
       auto: false,
       reason: regionProfile
         ? `已手动指定作物；土壤参数仍按${regionProfile.name}修正`
         : "已手动指定作物；未识别到省份，按作物档案的全国经验值计算",
-      seasonLabel: picked?.season?.label ?? null,
+      seasonLabel: season?.label ?? null,
       alternatives,
+      sowingDate: sowing.sowingDate,
+      sowingSource: sowing.sowingSource,
+      phenology: null,
     };
-    return { crop, selection };
+    return { crop, selection, ...sowing };
   }
 
   if (!regionProfile) {
@@ -268,13 +306,20 @@ function resolveCropForRequest(input: {
         reason: "未能识别所在省份，按通用大田作物计算",
         seasonLabel: null,
         alternatives: [],
+        sowingDate: null,
+        sowingSource: null,
+        phenology: null,
       },
+      sowingDate: null,
+      sowingSource: null,
     };
   }
 
   const primaryId = picked?.primary ?? null;
   const seasonLabel = picked?.season?.label ?? null;
   const crop = applyRegion(resolveCrop(primaryId), regionProfile);
+  const season = picked?.season ?? null;
+  const sowing = resolveSowing({ crop, season, userSowing, today, month });
 
   return {
     crop,
@@ -285,8 +330,54 @@ function resolveCropForRequest(input: {
         : `按${regionProfile.name}（${regionProfile.croppingSystem}）常年主要作物自动选用`,
       seasonLabel,
       alternatives: alternatives.filter((item) => item.id !== crop.id),
+      sowingDate: sowing.sowingDate,
+      sowingSource: sowing.sowingSource,
+      phenology: null,
     },
+    ...sowing,
   };
+}
+
+/**
+ * 播种日期来源：用户输入优先；否则按该作物在当前地区季节窗口中的播种月估算。
+ * 多年生作物没有播种期概念，返回 null。
+ */
+function resolveSowing(input: {
+  crop: CropProfile;
+  season: SeasonWindow | null;
+  userSowing: string | null;
+  today: string;
+  month: number;
+}): { sowingDate: string | null; sowingSource: "user" | "region" | null } {
+  if (input.userSowing) return { sowingDate: input.userSowing, sowingSource: "user" };
+  if (input.crop.perennial) return { sowingDate: null, sowingSource: null };
+
+  const sowingMonth = input.season?.sowingMonth;
+  if (!sowingMonth) return { sowingDate: null, sowingSource: null };
+
+  const inferred = inferSowingDate(sowingMonth, input.month, input.today);
+  return inferred
+    ? { sowingDate: inferred, sowingSource: "region" }
+    : { sowingDate: null, sowingSource: null };
+}
+
+/** 按季节窗口的播种月估算最近一个播种日期；跨年作物（冬小麦）自动落到去年。 */
+function inferSowingDate(sowingMonth: number, currentMonth: number, today: string): string {
+  const year = Number(today.slice(0, 4));
+  const month = String(sowingMonth).padStart(2, "0");
+  const targetYear = currentMonth >= sowingMonth ? year : year - 1;
+  return `${targetYear}-${month}-01`;
+}
+
+/** 校验用户传入的播种日期：必须是合法日期、不晚于今天、且不超过 400 天前。 */
+function parseSowingDate(value: string, today: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const stamp = Date.parse(`${value}T00:00:00Z`);
+  if (!Number.isFinite(stamp)) return null;
+  if (new Date(stamp).toISOString().slice(0, 10) !== value) return null;
+  if (value > today) return null;
+  const oldest = Date.parse(`${today}T00:00:00Z`) - 400 * 86_400_000;
+  return stamp < oldest ? null : value;
 }
 
 /**
@@ -374,13 +465,22 @@ function buildRegionInfo(
 }
 
 /**
- * 估算访问者所在地的当前月份。
+ * 估算访问者所在地的本地月份与日期。
  * 识别到中国省份时固定按东八区（全境同一时区）；否则按经度粗算（每 15° 一小时）。
  */
-function localMonth(lon: number, region: RegionProfile | null): number {
+function localDateParts(
+  lon: number,
+  region: RegionProfile | null,
+): { month: number; date: string } {
   const offsetHours = region ? 8 : Math.round(lon / 15);
   const shifted = new Date(Date.now() + offsetHours * 3_600_000);
-  return shifted.getUTCMonth() + 1;
+  const year = shifted.getUTCFullYear();
+  const month = shifted.getUTCMonth() + 1;
+  const day = shifted.getUTCDate();
+  return {
+    month,
+    date: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`,
+  };
 }
 
 /** 把缓存体 + 当前请求者的定位信息组装成响应。 */

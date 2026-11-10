@@ -35,6 +35,7 @@ interface HourScore {
   wind: number;
   temp: number;
   humidity: number;
+  vpd: number;
 }
 
 interface SprayWindow {
@@ -45,6 +46,7 @@ interface SprayWindow {
   wind: number;
   temp: number;
   humidity: number;
+  vpd: number;
 }
 
 function scoreHour(ctx: AdvisoryContext, index: number): HourScore {
@@ -58,7 +60,8 @@ function scoreHour(ctx: AdvisoryContext, index: number): HourScore {
   const precip = hourly.precipitation[index];
   const probability = hourly.precipProbability[index];
   const et0 = hourly.et0[index];
-  const base = { index, wind, temp, humidity };
+  const vpd = hourly.vpd[index];
+  const base = { index, wind, temp, humidity, vpd };
 
   if (!isValid(hour)) return { ...base, score: 0, blocked: "时间数据缺失" };
   if (hour < DAY_START || hour > DAY_END) {
@@ -92,13 +95,19 @@ function scoreHour(ctx: AdvisoryContext, index: number): HourScore {
     else if (humidity > HUMIDITY_HIGH) score -= 6;
     else if (humidity > 85) score -= 8;
   }
+  if (isValid(vpd)) {
+    // VPD 过高：雾滴蒸发快、飘移与药害风险上升；过低：叶面干燥慢、药液易流失。
+    if (vpd > 2.5) score -= 10;
+    else if (vpd > 2.0) score -= 6;
+    else if (vpd < 0.4) score -= 5;
+  }
   if (isValid(probability)) {
     if (probability > 50) score -= 12;
     else if (probability > 20) score -= 8;
   }
   if (isValid(et0) && et0 > 0.35) score -= 10;
 
-  return { index, wind, temp, humidity, score: clamp(Math.round(score), 0, 100), blocked: null };
+  return { ...base, score: clamp(Math.round(score), 0, 100), blocked: null };
 }
 
 export function sprayAdvice(ctx: AdvisoryContext): AdviceCard {
@@ -126,6 +135,7 @@ export function sprayAdvice(ctx: AdvisoryContext): AdviceCard {
         wind: avg(current.map((item) => item.wind)),
         temp: avg(current.map((item) => item.temp)),
         humidity: avg(current.map((item) => item.humidity)),
+        vpd: avg(current.map((item) => item.vpd)),
       });
     }
     current = [];
@@ -157,6 +167,7 @@ export function sprayAdvice(ctx: AdvisoryContext): AdviceCard {
         { label: "窗口平均风速", value: fmt(best.wind, 1, "m/s") },
         { label: "窗口平均气温", value: fmt(best.temp, 1, "℃") },
         { label: "窗口平均湿度", value: fmt(best.humidity, 0, "%") },
+        { label: "窗口平均 VPD", value: fmt(best.vpd, 2, "kPa") },
         { label: "未来 48h 候选窗口", value: `${windows.length} 个` },
       ]
     : [
@@ -164,7 +175,7 @@ export function sprayAdvice(ctx: AdvisoryContext): AdviceCard {
         { label: "主要限制因素", value: mainBlocker ? mainBlocker[0] : "气象条件不满足作业要求" },
       ];
 
-  const conditionText = `判定条件：风速 ≤ ${WIND_BLOCK} m/s、阵风 ≤ ${GUST_BLOCK} m/s、无降水且未来 6 小时雨量 < ${RAIN_NEXT6_BLOCK} mm、气温 ${TEMP_MIN}–${TEMP_MAX} ℃、降水概率 ≤ ${PROB_BLOCK}%，作业时段限 ${DAY_START}:00–${DAY_END}:00。`;
+  const conditionText = `判定条件：风速 ≤ ${WIND_BLOCK} m/s、阵风 ≤ ${GUST_BLOCK} m/s、无降水且未来 6 小时雨量 < ${RAIN_NEXT6_BLOCK} mm、气温 ${TEMP_MIN}–${TEMP_MAX} ℃、降水概率 ≤ ${PROB_BLOCK}%，作业时段限 ${DAY_START}:00–${DAY_END}:00；VPD 作为蒸发与飘移的扣分项（>2.5 kPa 或 <0.4 kPa 降分）。`;
 
   if (!best) {
     const level: AdviceLevel = "warn";
@@ -204,7 +215,7 @@ export function sprayAdvice(ctx: AdvisoryContext): AdviceCard {
     category: "喷洒窗口",
     level,
     headline,
-    reason: `${conditionText}未来 48 小时筛出 ${windows.length} 个候选窗口，推荐时段：${windowText}。首选窗口平均风速 ${fmt(best.wind, 1, "m/s")}、气温 ${fmt(best.temp, 1, "℃")}、相对湿度 ${fmt(best.humidity, 0, "%")}。`,
+    reason: `${conditionText}未来 48 小时筛出 ${windows.length} 个候选窗口，推荐时段：${windowText}。首选窗口平均风速 ${fmt(best.wind, 1, "m/s")}、气温 ${fmt(best.temp, 1, "℃")}、相对湿度 ${fmt(best.humidity, 0, "%")}、VPD ${fmt(best.vpd, 2, "kPa")}。`,
     actions: [
       "选择清晨露水干后或傍晚作业，此时风速低、蒸发损失小",
       "核查下风向 100 m 内有无敏感作物、水源、蜂场与居民点",

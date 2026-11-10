@@ -475,6 +475,32 @@ a {
   color: var(--ink-2);
 }
 
+/* 播种期：独占一行，日期输入与“按地区估算”按钮横向排列 */
+.location__item--sowing {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-xs);
+  padding-top: var(--space-xs);
+  border-top: var(--rule-hair) solid var(--rule);
+}
+
+.location__item--sowing .location__label {
+  flex: 0 0 auto;
+}
+
+.location__item--sowing .input {
+  width: auto;
+  min-width: 9.5rem;
+  max-width: 14rem;
+}
+
+.btn--tiny {
+  min-height: 32px;
+  padding: 0 var(--space-sm);
+  font-size: var(--text-xs);
+}
+
 .crop-alt {
   grid-column: 1 / -1;
   display: flex;

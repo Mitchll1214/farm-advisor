@@ -57,8 +57,13 @@ export interface HourlySeries {
   soilMoisture0to1: number[];
   soilMoisture3to9: number[];
   soilMoisture9to27: number[];
+  soilMoisture27to81: number[];
   soilTemperature6: number[];
   cloudCover: number[];
+  /** 叶面湿润概率 %（ECMWF），缺失为 NaN。 */
+  leafWetness: number[];
+  /** 饱和水汽压差 kPa，缺失为 NaN。 */
+  vpd: number[];
 }
 
 /** Open-Meteo daily 变量规范化结果。缺失值一律为 NaN。 */
@@ -89,6 +94,41 @@ export interface WeatherBundle {
   fetchedAt: string;
   /** 是否因为变量裁剪而降级到精简变量集。 */
   degradedVariables: boolean;
+  /** 变量完整度：full 全部变量；extended 缺新增农业变量；core 仅核心变量。 */
+  variableTier: "full" | "extended" | "core";
+}
+
+/** 作物分组，用于前端下拉框分组展示。 */
+export type CropGroup = "粮食作物" | "油料作物" | "经济作物" | "蔬菜" | "果树" | "饲草" | "其他";
+
+/** FAO-56 三段作物系数。 */
+export interface KcStages {
+  /** 苗期 Kc。 */
+  initial: number;
+  /** 旺盛期 Kc。 */
+  mid: number;
+  /** 成熟期 Kc。 */
+  late: number;
+  /** 阶段分界（占全生育期 GDD 的比例）：苗期末、发育期末、旺盛期末。 */
+  ratios: [number, number, number];
+}
+
+/** 物候阶段。 */
+export type PhenologyStage = "initial" | "development" | "mid" | "late";
+
+/** 由播种日期与积温推算出的当前物候。 */
+export interface Phenology {
+  sowingDate: string;
+  stage: PhenologyStage;
+  stageLabel: string;
+  /** 当前作物系数 Kc。 */
+  kc: number;
+  /** 生育进度 0–1（超过 1 表示已过全生育期）。 */
+  progress: number;
+  /** 播种以来累计 GDD。 */
+  gddSinceSowing: number;
+  /** 全生育期参考 GDD。 */
+  gddToMaturity: number;
 }
 
 /** 病虫害气象风险模型（简化版，仅依赖温湿条件与参考积温）。 */
@@ -115,12 +155,20 @@ export interface CropProfile {
   id: string;
   name: string;
   aliases: string[];
+  /** 作物分组，用于前端下拉框分组。 */
+  group?: CropGroup;
+  /** 多年生作物（茶、柑橘、苹果、葡萄等）不按播种期推算物候。 */
+  perennial?: boolean;
   /** GDD 基温 ℃（生长度日基点）。 */
   baseTemp: number;
   /** GDD 上限温度 ℃（超出部分不计入积温）。 */
   upperTemp: number;
-  /** 作物系数 Kc，用于由 ET₀ 换算作物蒸散量 ETc。 */
+  /** 作物系数 Kc，用于由 ET₀ 换算作物蒸散量 ETc；有物候时作为回退值。 */
   kc: number;
+  /** FAO-56 三段 Kc；缺省时不推算物候，直接使用 kc。 */
+  kcStages?: KcStages;
+  /** 全生育期参考 GDD（自播种起算）；缺省时不推算物候。 */
+  gddToMaturity?: number;
   /** 霜冻风险阈值：预报最低气温低于该值即提示霜冻。 */
   frostTmin: number;
   /** 热应激阈值：预报最高气温高于该值即提示高温胁迫。 */
@@ -145,6 +193,8 @@ export interface SeasonWindow {
   crops: string[];
   /** 在地月份（1–12）。 */
   months: number[];
+  /** 该季主要作物的播种月份（1–12），用于在没有用户输入时估算物候。 */
+  sowingMonth?: number;
 }
 
 /**
@@ -199,6 +249,12 @@ export interface CropSelection {
   seasonLabel: string | null;
   /** 该地区同季的备选作物，供一键切换。 */
   alternatives: { id: string; name: string }[];
+  /** 本次采用的播种日期（YYYY-MM-DD）；无法确定时为 null。 */
+  sowingDate: string | null;
+  /** 播种日期来源：user 手动输入；region 按地区季节窗口估算。 */
+  sowingSource: "user" | "region" | null;
+  /** 由播种日期与积温推算的当前物候；无法推算时为 null。 */
+  phenology: Phenology | null;
 }
 
 /** 定位结果。 */
@@ -219,6 +275,8 @@ export interface AdvisoryContext {
   region: RegionProfile | null;
   crop: CropProfile;
   weather: WeatherBundle;
+  /** 由播种日期与积温推算的物候；无播种期或多年生作物时为 null。 */
+  phenology?: Phenology | null;
 }
 
 export interface AdvisorySummary {

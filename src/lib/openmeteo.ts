@@ -29,6 +29,30 @@ const FULL_HOURLY = [
   "soil_moisture_0_to_1cm",
   "soil_moisture_3_to_9cm",
   "soil_moisture_9_to_27cm",
+  "soil_moisture_27_to_81cm",
+  "soil_temperature_6cm",
+  "cloud_cover",
+  "leaf_wetness_probability",
+  "vapour_pressure_deficit",
+];
+
+/**
+ * 次级变量集：去掉叶面湿润、VPD 与深层土壤湿度这三个较新的农业变量。
+ * 某些区域或模型组合对它们返回 400 时，保留其余农业变量降级一次，
+ * 而不是直接掉到只剩核心变量。
+ */
+const EXTENDED_HOURLY = [
+  "temperature_2m",
+  "relative_humidity_2m",
+  "dew_point_2m",
+  "precipitation",
+  "precipitation_probability",
+  "wind_speed_10m",
+  "wind_gusts_10m",
+  "et0_fao_evapotranspiration",
+  "soil_moisture_0_to_1cm",
+  "soil_moisture_3_to_9cm",
+  "soil_moisture_9_to_27cm",
   "soil_temperature_6cm",
   "cloud_cover",
 ];
@@ -96,23 +120,32 @@ export async function fetchWeather(
     timeoutMs: options.timeoutMs ?? REQUEST_TIMEOUT_MS,
   };
 
-  try {
-    const payload = await requestForecast(latitude, longitude, config);
-    return normalize(payload, latitude, longitude, false);
-  } catch (error) {
-    const rejectable =
-      error instanceof WeatherError && (error.code === "http_400" || error.code === "http_422");
-    if (!rejectable) throw error;
+  const tiers: { hourly: string[]; daily: string[]; tier: WeatherBundle["variableTier"] }[] = [
+    { hourly: FULL_HOURLY, daily: FULL_DAILY, tier: "full" },
+    { hourly: EXTENDED_HOURLY, daily: FULL_DAILY, tier: "extended" },
+    { hourly: CORE_HOURLY, daily: CORE_DAILY, tier: "core" },
+  ];
 
-    // 上游拒绝了部分农业变量 → 用核心变量重试一次，其余决策模块会自动降级。
-    const fallbackConfig: RequestConfig = {
-      ...config,
-      hourly: CORE_HOURLY,
-      daily: CORE_DAILY,
-    };
-    const payload = await requestForecast(latitude, longitude, fallbackConfig);
-    return normalize(payload, latitude, longitude, true);
+  let lastError: unknown = null;
+  for (const tier of tiers) {
+    try {
+      const payload = await requestForecast(latitude, longitude, {
+        ...config,
+        hourly: tier.hourly,
+        daily: tier.daily,
+      });
+      return normalize(payload, latitude, longitude, tier.tier);
+    } catch (error) {
+      lastError = error;
+      const rejectable =
+        error instanceof WeatherError && (error.code === "http_400" || error.code === "http_422");
+      if (!rejectable) throw error;
+    }
   }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new WeatherError("network", "Open-Meteo 请求失败");
 }
 
 async function requestForecast(
@@ -166,7 +199,7 @@ function normalize(
   payload: Record<string, unknown>,
   latitude: number,
   longitude: number,
-  degradedVariables: boolean,
+  variableTier: WeatherBundle["variableTier"],
 ): WeatherBundle {
   const hourlyRaw = asRecord(payload.hourly);
   const dailyRaw = asRecord(payload.daily);
@@ -189,8 +222,11 @@ function normalize(
     soilMoisture0to1: column(hourlyRaw, "soil_moisture_0_to_1cm", hourlyLength),
     soilMoisture3to9: column(hourlyRaw, "soil_moisture_3_to_9cm", hourlyLength),
     soilMoisture9to27: column(hourlyRaw, "soil_moisture_9_to_27cm", hourlyLength),
+    soilMoisture27to81: column(hourlyRaw, "soil_moisture_27_to_81cm", hourlyLength),
     soilTemperature6: column(hourlyRaw, "soil_temperature_6cm", hourlyLength),
     cloudCover: column(hourlyRaw, "cloud_cover", hourlyLength),
+    leafWetness: column(hourlyRaw, "leaf_wetness_probability", hourlyLength),
+    vpd: column(hourlyRaw, "vapour_pressure_deficit", hourlyLength),
   };
 
   const daily: DailySeries = {
@@ -220,7 +256,8 @@ function normalize(
     hourly,
     daily,
     fetchedAt: new Date().toISOString(),
-    degradedVariables,
+    degradedVariables: variableTier !== "full",
+    variableTier,
   };
 }
 

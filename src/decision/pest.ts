@@ -10,7 +10,7 @@
  */
 
 import type { AdviceCard, AdviceLevel, AdvisoryContext, PestModel } from "../lib/types";
-import { avg, fmt, isValid, makeCard, sum, todayIndex } from "../lib/util";
+import { avg, fmt, isValid, makeCard, sum, todayIndex, validCount } from "../lib/util";
 import { dailyGdd } from "./gdd";
 
 const TEMP_WINDOW_DAYS = 3;
@@ -37,9 +37,13 @@ export function pestAdvice(ctx: AdvisoryContext): AdviceCard {
   const hourly = weather.hourly;
   const today = todayIndex(daily.time, weather.localDate);
 
-  // 地区重点监测对象：有该地区档案时，命中优先、并在条件刚好达标时提升一档；
-  // 非本地区主要对象的命中则降一档，避免在全国口径下报出与当地无关的风险。
-  const priority = new Set(region?.pestPriority ?? []);
+  // 地区重点监测对象：有该地区档案、且名单与当前作物的病虫害有交集时，
+  // 命中优先、并在条件刚好达标时提升一档；无交集时不做地区降级，
+  // 避免新作物（地区名单尚未配置）被一律压回「关注」。
+  const cropPestIds = new Set(crop.pests.map((pest) => pest.id));
+  const priority = new Set(
+    (region?.pestPriority ?? []).filter((id) => cropPestIds.has(id)),
+  );
   const regionalWeighting = priority.size > 0;
 
   const windowStart = Math.max(0, today - TEMP_WINDOW_DAYS);
@@ -51,9 +55,24 @@ export function pestAdvice(ctx: AdvisoryContext): AdviceCard {
   const humidityStart = Math.max(0, weather.nowIndex - HUMIDITY_WINDOW_HOURS);
   const humidity = avg(hourly.humidity.slice(humidityStart, weather.nowIndex + 1));
 
+  // 叶面湿润概率比相对湿度更接近病害侵染判据：湿润小时数越长，真菌/细菌病害风险越高。
+  const leafWetSlice = hourly.leafWetness.slice(humidityStart, weather.nowIndex + 1);
+  const leafWetSeen = validCount(leafWetSlice) > 0;
+  const leafWet = avg(leafWetSlice);
+  let leafWetHours = 0;
+  if (leafWetSeen) {
+    for (const value of leafWetSlice) {
+      if (isValid(value) && value >= 40) leafWetHours += 1;
+    }
+  }
+  const leafWetText = leafWetSeen
+    ? `${leafWetHours} 小时（平均 ${fmt(leafWet, 0, "%")}）`
+    : "无数据";
+
   const metricsCommon = [
     { label: "近 3 天平均气温", value: fmt(meanTemp, 1, "℃") },
     { label: "近 72h 平均湿度", value: fmt(humidity, 0, "%") },
+    { label: "近 72h 叶面湿润", value: leafWetText },
     { label: "近 3 天累计降水", value: fmt(rain3, 1, "mm") },
   ];
 
@@ -86,7 +105,10 @@ export function pestAdvice(ctx: AdvisoryContext): AdviceCard {
 
     const tempOk = isValid(meanTemp) && meanTemp >= pest.tempMin && meanTemp <= pest.tempMax;
     const humidityOk = isValid(humidity) ? humidity >= pest.humidityMin : false;
-    const wetOk = pest.needsWet ? isValid(rain3) && rain3 >= WET_MIN_MM : true;
+    // 需湿型病害：累计降水达标，或叶面湿润小时数足够（叶面湿润概率是更直接的侵染判据）。
+    const wetOk = pest.needsWet
+      ? (isValid(rain3) && rain3 >= WET_MIN_MM) || (leafWetSeen && leafWetHours >= 12)
+      : true;
     if (!(tempOk && humidityOk && wetOk)) continue;
 
     const center = (pest.tempMin + pest.tempMax) / 2;
@@ -96,6 +118,11 @@ export function pestAdvice(ctx: AdvisoryContext): AdviceCard {
 
     // 非需湿型：大雨冲刷会压低虫口，下调一级。
     if (!pest.needsWet && isValid(rain3) && rain3 >= WASHOUT_MM && level === "warn") level = "watch";
+
+    // 病害：叶面长时间湿润（≥24 小时/72 小时）时，即使温湿条件只是勉强达标，也升到「预警」。
+    if (pest.kind === "病害" && leafWetSeen && leafWetHours >= 24 && level === "watch") {
+      level = "warn";
+    }
 
     // 地区加权：只在本地区重点监测名单内的对象，才允许升到「预警」；
     // 名单外的对象即使温湿条件吻合也压回「关注」，等级上限仍为 warn。
@@ -123,7 +150,7 @@ export function pestAdvice(ctx: AdvisoryContext): AdviceCard {
       category: "病虫害风险",
       level: "ok",
       headline: "当前温湿条件不利于主要病虫害活跃",
-      reason: `近 3 天平均气温 ${fmt(meanTemp, 1, "℃")}、近 72 小时平均相对湿度 ${fmt(humidity, 0, "%")}、累计降水 ${fmt(rain3, 1, "mm")}，均未同时落入 ${crop.name} 主要病虫害的适宜发生区间。本提示仅依据气象条件推断，未经田块虫情校准。`,
+      reason: `近 3 天平均气温 ${fmt(meanTemp, 1, "℃")}、近 72 小时平均相对湿度 ${fmt(humidity, 0, "%")}、叶面湿润 ${leafWetText}、累计降水 ${fmt(rain3, 1, "mm")}，均未同时落入 ${crop.name} 主要病虫害的适宜发生区间。本提示仅依据气象条件推断，未经田块虫情校准。`,
       actions: [
         "保持常规田间巡查，重点查看叶片背面与新梢",
         "遇连续阴雨或气温骤升，及时重新评估",
@@ -139,6 +166,8 @@ export function pestAdvice(ctx: AdvisoryContext): AdviceCard {
     .slice(0, 3)
     .map((hit) => {
       const condition = `适宜区间 ${hit.pest.tempMin}–${hit.pest.tempMax} ℃、湿度 ≥ ${hit.pest.humidityMin}%`;
+      const wetText =
+        hit.pest.needsWet && leafWetSeen ? `，近 72h 叶面湿润 ${leafWetHours} 小时` : "";
       const gddText = isValid(hit.gdd) ? `，近 ${GDD_WINDOW_DAYS} 天积温 ${fmt(hit.gdd, 0, "GDD")}（基点 ${hit.pest.baseTemp} ℃）` : "";
       const regionalTag =
         region && hit.regional !== null
@@ -146,7 +175,7 @@ export function pestAdvice(ctx: AdvisoryContext): AdviceCard {
             ? `（${region.name}重点监测对象）`
             : `（非${region.name}主要监测对象，仅供参考）`
           : "";
-      return `${hit.pest.name}：${condition}${gddText}${regionalTag}`;
+      return `${hit.pest.name}：${condition}${wetText}${gddText}${regionalTag}`;
     })
     .join("；");
 
@@ -160,7 +189,7 @@ export function pestAdvice(ctx: AdvisoryContext): AdviceCard {
     category: "病虫害风险",
     level,
     headline: `气象条件有利于${names}发生发展`,
-    reason: `近 3 天平均气温 ${fmt(meanTemp, 1, "℃")}、近 72 小时平均相对湿度 ${fmt(humidity, 0, "%")}、累计降水 ${fmt(rain3, 1, "mm")}，达到以下模型的适宜发生条件——${detail}。本提示为气象驱动的风险推断${weightingText}，没有接入田块虫情与区域测报数据，不能替代田间调查。`,
+    reason: `近 3 天平均气温 ${fmt(meanTemp, 1, "℃")}、近 72 小时平均相对湿度 ${fmt(humidity, 0, "%")}、叶面湿润 ${leafWetText}、累计降水 ${fmt(rain3, 1, "mm")}，达到以下模型的适宜发生条件——${detail}。本提示为气象驱动的风险推断${weightingText}，没有接入田块虫情与区域测报数据，不能替代田间调查。`,
     actions,
     metrics: [
       ...metricsCommon,
