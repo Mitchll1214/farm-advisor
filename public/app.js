@@ -28,6 +28,7 @@ const els = {
   sowingDate: document.getElementById("sowing-date"),
   sowingClear: document.getElementById("sowing-clear"),
   summary: document.getElementById("summary-panel"),
+  alerts: document.getElementById("alerts-panel"),
   conditions: document.getElementById("conditions-panel"),
   regionFacts: document.getElementById("region-facts"),
   forecastPanel: document.getElementById("forecast-panel"),
@@ -209,6 +210,7 @@ function render(data) {
   renderCropSelection(data);
   renderPhenologyBar(data);
   renderSummary(data);
+  renderAlerts(data);
   renderConditions(data);
   renderRegionFacts(data);
   renderForecast(data);
@@ -228,6 +230,10 @@ function renderFailure(data) {
   }
 
   els.summary.hidden = true;
+  if (els.alerts) {
+    els.alerts.hidden = true;
+    els.alerts.replaceChildren();
+  }
   els.conditions.hidden = true;
   els.regionFacts.hidden = true;
   els.forecastPanel.hidden = true;
@@ -399,6 +405,144 @@ function renderSummary(data) {
   );
 
   els.summary.replaceChildren(head, text, meta);
+}
+
+/* ---------- 官方气象预警信号 ---------- */
+
+/** 信号等级 → 中文标签；与后端 AlertSeverity 对应，等级高低由后端排序决定。 */
+const ALERT_SEVERITY = {
+  red: { label: "红色" },
+  orange: { label: "橙色" },
+  yellow: { label: "黄色" },
+  blue: { label: "蓝色" },
+};
+
+/** 覆盖范围 → 页面标签。区分「覆盖本地」与「同省参考」，避免用户误以为全县都发了信号。 */
+const ALERT_SCOPE_LABELS = {
+  local: "本地",
+  province: "全省",
+  region: "同省参考",
+};
+
+/**
+ * 官方预警区块。
+ *
+ * 它刻意和「建议卡片」分开：卡片是本项目由气象条件**反推的可能性**，等级上限压到「预警」；
+ * 这里显示的是气象台**已经发布的结论**，带官方四色等级与发布单位。两者口径不同，
+ * 混在同一张卡片里会让用户分不清哪个是官方判定。
+ *
+ * 没有数据时必须区分三种情况，不能一律显示「无预警」：
+ *   error 非空   → 上游没查到（故障），明确说明而不是暗示安全；
+ *   alerts 为 null → 未能识别省份，不知道该查哪个省；
+ *   items 为空   → 确实没有覆盖本地的在效信号。
+ */
+function renderAlerts(data) {
+  const alerts = data && data.alerts && typeof data.alerts === "object" ? data.alerts : null;
+  const panel = els.alerts;
+  if (!panel) return;
+
+  const items = alerts && Array.isArray(alerts.items) ? alerts.items : [];
+
+  // 未识别省份、且没有任何可展示内容时整块隐藏，不留一个空壳。
+  if (!alerts) {
+    panel.hidden = true;
+    panel.replaceChildren();
+    return;
+  }
+
+  panel.hidden = false;
+  panel.replaceChildren();
+
+  const head = el("div", "alerts__head");
+  head.append(el("h2", "alerts__title", "官方气象预警信号"));
+
+  const counts = [];
+  if (typeof alerts.provinceCount === "number") counts.push(`本省 ${alerts.provinceCount} 条`);
+  if (typeof alerts.localCount === "number" && alerts.localCount > 0) {
+    counts.push(`覆盖本地 ${alerts.localCount} 条`);
+  }
+  if (counts.length > 0) head.append(el("span", "alerts__count", counts.join(" · ")));
+  panel.append(head);
+
+  // 故障：明确说「没查到」，并说明这不等于没有预警。
+  if (alerts.error) {
+    panel.append(
+      el(
+        "p",
+        "alerts__empty alerts__empty--error",
+        `预警信号暂时没查到（${String(alerts.error)}）。这不代表当地没有预警，请直接到中央气象台或“农灾警”查看。`,
+      ),
+    );
+    return;
+  }
+
+  if (items.length === 0) {
+    const desc =
+      typeof alerts.provinceCount === "number" && alerts.provinceCount > 0
+        ? `本省有 ${alerts.provinceCount} 条在效信号，但没有覆盖到当前参考地的。`
+        : "全国当前没有与本地区相关的在效预警信号。";
+    panel.append(el("p", "alerts__empty", `${desc}如需官方原文，可打开中央气象台预警页核对。`));
+    return;
+  }
+
+  const list = el("ul", "alerts__list");
+  for (const item of items) {
+    if (!item || typeof item !== "object") continue;
+    const severity = ALERT_SEVERITY[item.severity] ? item.severity : "blue";
+    const row = el("li", `alert alert--${severity}`);
+
+    const top = el("div", "alert__top");
+    top.append(el("span", "alert__badge", `${item.severityLabel || ALERT_SEVERITY[severity].label}预警`));
+    if (item.kind) top.append(el("span", "alert__kind", String(item.kind)));
+
+    const scope = ALERT_SCOPE_LABELS[item.scope] || "";
+    if (scope) top.append(el("span", `alert__scope alert__scope--${item.scope || "region"}`, scope));
+    row.append(top);
+
+    if (item.issuer) row.append(el("p", "alert__issuer", String(item.issuer)));
+    if (item.relevance) row.append(el("p", "alert__relevance", String(item.relevance)));
+
+    const foot = el("div", "alert__foot");
+    if (item.issuedAt) foot.append(el("span", "alert__time", `发布于 ${item.issuedAt}`));
+
+    // 详情页链接由后端按固定域名 + 白名单 alertid 拼出；这里再校验一次协议与主机，
+    // 避免任何情况下把外部数据当链接渲染成 javascript: 之类的危险地址。
+    const href = safeAlarmUrl(item.url);
+    if (href) {
+      const link = el("a", "alert__link", "官方原文");
+      link.href = href;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      foot.append(link);
+    }
+    row.append(foot);
+    list.append(row);
+  }
+  panel.append(list);
+
+  const foot = el("p", "alerts__note");
+  const total = typeof alerts.nationalCount === "number" ? `（全国在效 ${alerts.nationalCount} 条）` : "";
+  const at = alerts.fetchedAt ? formatDateTime(alerts.fetchedAt) : "—";
+  foot.append(
+    document.createTextNode(
+      `数据来自${alerts.source || "中央气象台预警接口"}${total}，抓取于 ${at}；按“覆盖本地 → 全省 → 同省参考”排序。`,
+    ),
+  );
+  panel.append(foot);
+}
+
+/** 只放行中央气象台预警详情页链接；其余一律不渲染成链接。 */
+function safeAlarmUrl(value) {
+  if (typeof value !== "string") return "";
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") return "";
+    if (url.hostname !== "www.nmc.cn") return "";
+    if (!url.pathname.startsWith("/publish/alarm/")) return "";
+    return url.toString();
+  } catch {
+    return "";
+  }
 }
 
 /** 数值格式化：缺测统一显示“—”，避免页面上出现 NaN。 */

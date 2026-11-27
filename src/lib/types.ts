@@ -405,6 +405,69 @@ export interface CurrentConditions {
   sunset: string | null;
 }
 
+/* ==========================================================================
+   官方气象预警信号（数据源：中央气象台 www.nmc.cn 的公开预警接口）
+   ========================================================================== */
+
+/** 中国气象局预警信号的四色等级，严重程度递增。 */
+export type AlertSeverity = "blue" | "yellow" | "orange" | "red";
+
+/** 信号与本次地块的行政范围关系。 */
+export type AlertScope = "local" | "region" | "province";
+
+/**
+ * 一条官方预警信号。
+ *
+ * 字段全部来自中央气象台的公开列表接口与标题文本，不做二次推断：
+ * `kind` / `severity` 从标准信号名称里解析，`areaCode` 取自 alertid 前缀。
+ */
+export interface OfficialAlert {
+  /** 中央气象台预警编号；前 6 位是发布单位的行政区划代码。 */
+  id: string;
+  /** 信号标题原文，如「河南省驻马店市汝南县气象台发布大风蓝色预警信号」。 */
+  title: string;
+  /** 信号类型，如「大风」「霜冻」「寒潮」；无法归类时为「其它」。 */
+  kind: string;
+  severity: AlertSeverity;
+  /** 等级中文，如「蓝色」。 */
+  severityLabel: string;
+  /** 发布单位行政区划代码（前 6 位）。 */
+  areaCode: string;
+  /** 发布台站所在地名，即标题中「发布」之前的部分。 */
+  issuer: string;
+  /** 发布时间原文，形如 "2026/11/27 15:03"。 */
+  issuedAt: string;
+  /** 发布范围：命中参考地所在市县 / 同省其它市县 / 省级台。 */
+  scope: AlertScope;
+  /** 与本次农事建议的关联说明；无关联时为 null。 */
+  relevance: string | null;
+  /** 关联的本站建议卡片 id（如 spray、frost），无对应时为 null。 */
+  cardId: string | null;
+  /** 中央气象台详情页，含预警正文与防御指南。 */
+  url: string;
+}
+
+/** 一次筛选得到的官方预警集合。 */
+export interface AlertBundle {
+  /** 数据源标识，用于页面署名。 */
+  source: string;
+  /** 筛出的信号，按「等级高 → 时间新」排序，已按 MAX_ALERTS 截断。 */
+  items: OfficialAlert[];
+  /** 该省当日全部有效信号数（含未列出的）。 */
+  provinceCount: number;
+  /** 命中参考地所在市县、或发布单位为省级台的信号数。 */
+  localCount: number;
+  /** 全国当日有效信号总数，用于说明这是一次全量筛选。 */
+  nationalCount: number;
+  /** 抓取时刻（ISO 8601）。 */
+  fetchedAt: string;
+  /**
+   * 上游不可用时的原因。**非 null 时表示"没查到"而不是"没有预警"**，
+   * 前端必须据此区分，不能把失败显示成"当前无预警"。
+   */
+  error: string | null;
+}
+
 export type AdvisoryErrorCode =
   | "locate_failed"
   | "bad_request"
@@ -439,6 +502,12 @@ export interface AdvisorySuccess {
     /** 上游数据源署名（CC BY 4.0 要求）。 */
     license: string;
   };
+  /**
+   * 官方农业气象灾害预警信号。
+   * 未识别到省份时为 null（无法确定查哪个省）；抓取失败时仍返回对象，
+   * 由 error 字段说明原因 —— 前端据此区分「没有预警」与「没查到」。
+   */
+  alerts: AlertBundle | null;
 }
 
 export interface AdvisoryFailure {

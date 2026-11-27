@@ -30,12 +30,14 @@ import { reverseRegion } from "../../src/lib/reverseGeo";
 import type { CacheLike, PagesContext } from "../../src/lib/http";
 import { getDefaultCache, jsonResponse, parseCoord, readCfGeo, sanitizeText } from "../../src/lib/http";
 import { fetchWeather, WeatherError } from "../../src/lib/openmeteo";
+import { fetchAlerts } from "../../src/lib/alerts";
 import type {
   AdviceCard,
   AdvisoryErrorCode,
   AdvisoryFailure,
   AdvisorySummary,
   AdvisorySuccess,
+  AlertBundle,
   CropProfile,
   CropSelection,
   CurrentConditions,
@@ -48,7 +50,7 @@ import type {
 import { round } from "../../src/lib/util";
 
 /** 缓存版本：调整响应结构或决策逻辑时递增，即可让旧缓存立即失效。 */
-const CACHE_VERSION = "v7";
+const CACHE_VERSION = "v8";
 const CACHE_TTL_SECONDS = 3600;
 /** 仅用于 Cache API 的内部 key，不对外暴露。 */
 const CACHE_HOST = "https://advisony.internal";
@@ -179,6 +181,16 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
 
   const regionInfo = buildRegionInfo(regionProfile, resolvedRegion?.matchedBy, referencePlace);
 
+  // 官方预警信号：与气象取数并行启动，不拖慢首屏。
+  // 分级依赖请求者的「数据参考地」，因此不进主缓存体（alerts.ts 内部另有省级缓存）。
+  const alertPlace = referencePlace || (device ? "" : cfCity || cfRegion);
+  const alertsPromise = fetchAlerts({
+    region: regionProfile,
+    placeName: alertPlace,
+    cache,
+    waitUntil: (promise) => context.waitUntil(promise),
+  });
+
   // 4. 缓存：同一坐标格网（2 位小数）+ 同一作物 + 同一地区 + 同一选取方式 + 同一播种日期 + 同一小时。
   const hourBucket = Math.floor(Date.now() / 3_600_000);
   const cropMode = auto ? "auto" : "fixed";
@@ -189,7 +201,16 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
   if (cache && !force) {
     const cached = await readCached(cache, cacheKey);
     if (cached) {
-      return respond(cached, { ...locationBase, timezone: cached.timezone }, "HIT", clientHeaders);
+      // 预警不随主缓存体返回：它的 local/region 分级依赖本次请求的参考地名，
+      // 但省维度的数据本身在 alerts.ts 内部按 10 分钟缓存，重复调用不会重复抓取。
+      const alerts = await alertsPromise;
+      return respond(
+        cached,
+        { ...locationBase, timezone: cached.timezone },
+        "HIT",
+        clientHeaders,
+        alerts,
+      );
     }
   }
 
@@ -265,7 +286,8 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     }
   }
 
-  return respond(bundle, location, "MISS", clientHeaders);
+  const alerts = await alertsPromise;
+  return respond(bundle, location, "MISS", clientHeaders, alerts);
 }
 
 /**
@@ -502,6 +524,7 @@ function respond(
   location: ResolvedLocation,
   cacheState: "HIT" | "MISS",
   clientHeaders: Record<string, string>,
+  alerts: AlertBundle | null,
 ): Response {
   const payload: AdvisorySuccess = {
     ok: true,
@@ -524,6 +547,7 @@ function respond(
       dailyVariables: bundle.requestedVariables.daily,
       license: "CC BY 4.0",
     },
+    alerts,
   };
 
   return jsonResponse(payload, {
