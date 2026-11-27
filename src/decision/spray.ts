@@ -203,6 +203,18 @@ export function sprayAdvice(ctx: AdvisoryContext): AdviceCard {
     )
     .join("、");
 
+  // 供前端画时间轴：按时间先后排列，与"推荐顺序"分开，读起来更直观。
+  const sprayWindows = top
+    .slice()
+    .sort((a, b) => a.startIndex - b.startIndex)
+    .map((item) => ({
+      start: hourly.time[item.startIndex] ?? "",
+      end: hourly.time[item.endIndex] ?? "",
+      hours: item.hours,
+      score: item.score,
+    }))
+    .filter((item) => item.start && item.end);
+
   const headline =
     level === "ok"
       ? `适宜作业：${hourLabel(hourly.time[best.startIndex] ?? "")} 起 ${best.hours} 小时（${best.score} 分）`
@@ -223,5 +235,6 @@ export function sprayAdvice(ctx: AdvisoryContext): AdviceCard {
       "施药后 6 小时内如遇降雨，视药剂耐冲刷性决定是否补喷",
     ],
     metrics,
+    sprayWindows,
   });
 }

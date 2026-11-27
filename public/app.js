@@ -24,10 +24,13 @@ const els = {
   cropSelect: document.getElementById("crop-select"),
   cropNote: document.getElementById("crop-note"),
   cropAlt: document.getElementById("crop-alt"),
+  phenoBar: document.getElementById("pheno-bar"),
   sowingDate: document.getElementById("sowing-date"),
   sowingClear: document.getElementById("sowing-clear"),
   summary: document.getElementById("summary-panel"),
   conditions: document.getElementById("conditions-panel"),
+  regionFacts: document.getElementById("region-facts"),
+  forecastPanel: document.getElementById("forecast-panel"),
   notices: document.getElementById("notices"),
   cards: document.getElementById("cards"),
   state: document.getElementById("state"),
@@ -38,6 +41,8 @@ const els = {
   sheetResults: document.getElementById("city-results"),
   useIp: document.getElementById("use-ip"),
   useDevice: document.getElementById("use-device"),
+  sources: document.getElementById("sources"),
+  sourcesBody: document.getElementById("sources-body"),
   toast: document.getElementById("toast"),
 };
 
@@ -202,10 +207,17 @@ function render(data) {
   els.state.hidden = true;
   renderLocation(data);
   renderCropSelection(data);
+  renderPhenologyBar(data);
   renderSummary(data);
   renderConditions(data);
+  renderRegionFacts(data);
+  renderForecast(data);
   renderNotices(data);
-  els.cards.replaceChildren(...(Array.isArray(data.cards) ? data.cards.map(renderCard) : []));
+  renderSources(data);
+  const focusId = data.summary && typeof data.summary.focusId === "string" ? data.summary.focusId : "";
+  els.cards.replaceChildren(
+    ...(Array.isArray(data.cards) ? data.cards.map((card) => renderCard(card, focusId)) : []),
+  );
 }
 
 function renderFailure(data) {
@@ -217,7 +229,11 @@ function renderFailure(data) {
 
   els.summary.hidden = true;
   els.conditions.hidden = true;
+  els.regionFacts.hidden = true;
+  els.forecastPanel.hidden = true;
+  els.phenoBar.hidden = true;
   els.notices.hidden = true;
+  if (els.sources) els.sources.hidden = true;
   els.cards.replaceChildren();
 
   els.state.hidden = false;
@@ -277,6 +293,13 @@ function renderLocation(data) {
     parts.push(`精度约 ${Math.round(accuracy)} 米`);
   }
   if (data.crop && data.crop.name) parts.push(data.crop.name);
+  // 海拔与时区都能影响霜冻判断与“本地时间”的含义，摊出来便于用户核对。
+  if (typeof data.elevation === "number" && Number.isFinite(data.elevation)) {
+    parts.push(`海拔约 ${Math.round(data.elevation)} 米`);
+  }
+  if (typeof location.timezone === "string" && location.timezone) {
+    parts.push(location.timezone);
+  }
   els.locationMeta.textContent = parts.join(" · ");
 }
 
@@ -360,36 +383,324 @@ function renderSummary(data) {
   head.append(el("span", undefined, "今日重点"), el("span", "badge", LEVEL_LABELS[level]));
 
   const text = el("p", "summary__text", summary.headline || "暂无结论");
+  const source = data.source && typeof data.source === "object" ? data.source : {};
+  // 变量完整度决定建议精度：降级时如实说明，避免用户把降级结果当作常规精度。
+  const tierNote =
+    source.variableTier === "core"
+      ? " · 仅核心变量"
+      : source.variableTier === "extended"
+        ? " · 部分农业变量缺失"
+        : "";
   const meta = el(
     "p",
     "summary__time",
     `更新于 ${formatDateTime(data.generatedAt, data.location && data.location.timezone)} · ` +
-      `${data.source && data.source.cache === "HIT" ? "命中 1 小时缓存" : "实时获取"}`,
+      `${source.cache === "HIT" ? "命中 1 小时缓存" : "实时获取"}${tierNote}`,
   );
 
   els.summary.replaceChildren(head, text, meta);
 }
 
-function renderConditions(data) {
-  const current = data.current || {};
+/** 数值格式化：缺测统一显示“—”，避免页面上出现 NaN。 */
+function formatNumber(value, digits) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  return value.toFixed(digits);
+}
+
+/** "2026-11-27" → "11月27日"。 */
+function formatDay(iso) {
+  if (typeof iso !== "string" || iso.length < 10) return "—";
+  return `${Number(iso.slice(5, 7))}月${Number(iso.slice(8, 10))}日`;
+}
+
+/** "2026-11-27T06:00" → "11月27日 06:00"。 */
+function formatHour(iso) {
+  if (typeof iso !== "string" || iso.length < 13) return "—";
+  return `${formatDay(iso)} ${iso.slice(11, 13)}:00`;
+}
+
+/** 生育进度条：只在能推算物候时出现，把 progress 变成可见的进度。 */
+function renderPhenologyBar(data) {
+  const selection = data.selection && typeof data.selection === "object" ? data.selection : null;
+  const phenology = selection && selection.phenology ? selection.phenology : null;
+  const progress = phenology ? Number(phenology.progress) : NaN;
+  if (!phenology || !Number.isFinite(progress) || progress <= 0) {
+    els.phenoBar.hidden = true;
+    els.phenoBar.replaceChildren();
+    return;
+  }
+
+  const ratio = Math.max(0, Math.min(1, progress));
+  const percent = Math.round(ratio * 100);
+
+  const head = el("div", "pheno__head");
+  head.append(
+    el("span", "pheno__label", "生育进度"),
+    el("span", "pheno__stage", `${phenology.stageLabel || "—"} · Kc ${formatNumber(phenology.kc, 2)}`),
+    el("span", "pheno__percent", `${percent}%`),
+  );
+
+  const track = el("div", "pheno__track");
+  const fill = el("div", "pheno__fill");
+  fill.style.width = `${percent}%`;
+  track.append(fill);
+
+  const foot = el("div", "pheno__foot");
+  foot.append(
+    el("span", undefined, `播种以来 ${formatNumber(phenology.gddSinceSowing, 0)} GDD`),
+    el("span", undefined, `全生育期参考 ${formatNumber(phenology.gddToMaturity, 0)} GDD`),
+    el("span", undefined, `播种 ${phenology.sowingDate || "—"}`),
+  );
+
+  els.phenoBar.replaceChildren(head, track, foot);
+  els.phenoBar.hidden = false;
+}
+
+/** 省份是怎么认出来的，便于用户判断地区参数是否可信。 */
+const MATCHED_BY_LABELS = {
+  region_code: "网络定位省码",
+  region_name: "地名匹配",
+  reverse_geocode: "按坐标反查",
+};
+
+/** 地区参数口径：把建议里用到的地区假定值摊开，不只藏在提示条里。 */
+function renderRegionFacts(data) {
+  const region = data.region && typeof data.region === "object" ? data.region : null;
+  if (!region) {
+    els.regionFacts.hidden = true;
+    els.regionFacts.replaceChildren();
+    return;
+  }
+
   const items = [
-    ["气温", formatValue(current.temperature, "℃", 1)],
-    ["相对湿度", formatValue(current.humidity, "%", 0)],
-    ["风速", formatValue(current.windSpeed, "m/s", 1)],
-    ["根区土壤湿度", formatValue(current.soilMoisture, "%", 1)],
-    ["土壤温度 6cm", formatValue(current.soilTemperature, "℃", 1)],
-    ["近 1 小时降水", formatValue(current.precipitation1h, "mm", 1)],
-    ["今日 ET₀", formatValue(current.et0Today, "mm", 1)],
+    ["数据参考地", region.placeName || region.name],
+    ["气候区", region.climateZone],
+    ["种植制度", region.croppingSystem],
+    ["主要土类", region.soilNote],
+    [
+      "有效降水系数",
+      typeof region.effectiveRainFactor === "number" && Number.isFinite(region.effectiveRainFactor)
+        ? String(region.effectiveRainFactor)
+        : null,
+    ],
+    ["地区识别", MATCHED_BY_LABELS[region.matchedBy] || null],
   ];
 
-  els.conditions.hidden = false;
-  els.conditions.replaceChildren(
-    ...items.map(([label, value]) => {
-      const box = el("div", "condition");
-      box.append(el("div", "condition__label", label), el("div", "condition__value", value));
-      return box;
-    }),
+  const head = el("div", "region-facts__head");
+  head.append(el("h2", "region-facts__title", "地区参数口径"));
+  head.append(el("span", "region-facts__badge", region.name || ""));
+
+  const list = el("dl", "region-facts__list");
+  for (const [label, value] of items) {
+    if (value === null || value === undefined || value === "") continue;
+    const row = el("div", "region-facts__row");
+    row.append(el("dt", undefined, label), el("dd", undefined, String(value)));
+    list.append(row);
+  }
+
+  els.regionFacts.replaceChildren(head, list);
+  els.regionFacts.hidden = false;
+}
+
+/** 未来 7 天逐日预报：天气现象、气温、降水概率、风向风速与水分盈亏。 */
+function renderForecast(data) {
+  const days = Array.isArray(data.forecast) ? data.forecast : [];
+  if (days.length === 0) {
+    els.forecastPanel.hidden = true;
+    els.forecastPanel.replaceChildren();
+    return;
+  }
+
+  const head = el("div", "forecast__head");
+  head.append(
+    el("h2", "forecast__title", `未来 ${days.length} 天（含今天）`),
+    el("span", "forecast__hint", "盈亏 = 有效降水 − 作物蒸散 ETc"),
   );
+
+  const grid = el("div", "forecast__days");
+  for (const day of days) {
+    const cell = el("div", "forecast__day");
+
+    const top = el("div", "forecast__date");
+    top.append(el("span", undefined, formatDay(day.date)));
+    if (typeof day.weather === "string" && day.weather) {
+      top.append(el("span", "forecast__weather", day.weather));
+    }
+
+    const temp = el("div", "forecast__temp");
+    temp.append(
+      el("span", "forecast__tmax", formatValue(day.tMax, "℃", 1)),
+      el("span", "forecast__tmin", formatValue(day.tMin, "℃", 1)),
+    );
+
+    const rainText =
+      day.precipitation === null || day.precipitation === undefined
+        ? "—"
+        : typeof day.precipProbability === "number" && Number.isFinite(day.precipProbability)
+          ? `${formatValue(day.precipitation, "mm", 1)} · ${Math.round(day.precipProbability)}%`
+          : formatValue(day.precipitation, "mm", 1);
+
+    const rain = el("div", "forecast__rain");
+    rain.append(el("span", "forecast__rain-label", "降水"), el("span", undefined, rainText));
+
+    // 有效降水与 ET₀ 是盈亏公式的两端，逐日摊开才能自己核对那一行的正负。
+    const effective = el("div", "forecast__rain");
+    effective.append(
+      el("span", "forecast__rain-label", "有效降水"),
+      el("span", undefined, formatValue(day.effectivePrecipitation, "mm", 1)),
+    );
+    const et0 = el("div", "forecast__rain");
+    et0.append(
+      el("span", "forecast__rain-label", "ET₀"),
+      el("span", undefined, formatValue(day.et0, "mm", 1)),
+    );
+
+    // 风向与风速、阵风一起给：喷洒建议要求核查下风向敏感作物，阵风则是硬性排除条件。
+    const wind = el("div", "forecast__wind");
+    const windNote =
+      typeof day.windDirection === "string" && day.windDirection ? `${day.windDirection} ` : "";
+    wind.append(
+      el("span", "forecast__wind-label", "最大风"),
+      el("span", undefined, `${windNote}${formatValue(day.windSpeedMax, "m/s", 1)}`),
+    );
+    const gust = el("div", "forecast__wind");
+    gust.append(
+      el("span", "forecast__wind-label", "阵风"),
+      el("span", undefined, formatValue(day.windGustMax, "m/s", 1)),
+    );
+
+    // 盈亏是唯一带方向的量，正负决定配色，缺测时保持中性。
+    const balanceText =
+      typeof day.balance === "number" && Number.isFinite(day.balance)
+        ? `${day.balance > 0 ? "+" : ""}${day.balance.toFixed(1)} mm`
+        : "—";
+    const balance = el("div", "forecast__balance");
+    if (typeof day.balance === "number" && Number.isFinite(day.balance)) {
+      balance.className = `forecast__balance forecast__balance--${day.balance >= 0 ? "surplus" : "deficit"}`;
+    }
+    balance.append(el("span", "forecast__balance-label", "盈亏"), el("span", undefined, balanceText));
+
+    cell.append(top, temp, rain, effective, et0, wind, gust, balance);
+
+    // 日出日落与昼长决定可作业时段与霜冻辐射降温窗口，逐日给出便于安排。
+    if (day.sunrise || day.sunset) {
+      const sun = el("div", "forecast__sun");
+      sun.append(
+        el("span", "forecast__sun-label", "日出/日落"),
+        el("span", undefined, `${day.sunrise || "—"} / ${day.sunset || "—"}`),
+      );
+      cell.append(sun);
+    }
+    // 昼长单独一行：日落时刻本身已含昼长信息，但直接给出小时数更方便比较长短。
+    if (typeof day.daylightHours === "number" && Number.isFinite(day.daylightHours)) {
+      const daylight = el("div", "forecast__sun");
+      daylight.append(
+        el("span", "forecast__sun-label", "昼长"),
+        el("span", undefined, `${day.daylightHours.toFixed(1)} h`),
+      );
+      cell.append(daylight);
+    }
+
+    grid.append(cell);
+  }
+
+  els.forecastPanel.replaceChildren(head, grid);
+  els.forecastPanel.hidden = false;
+}
+
+function renderConditions(data) {
+  const current = data.current || {};
+
+  // 气温与露点、风速与风向阵风都是成对读才有意义，合成一项展示，避免格子铺得过散。
+  const dewNote =
+    typeof current.dewPoint === "number" && Number.isFinite(current.dewPoint)
+      ? `露点 ${current.dewPoint.toFixed(1)} ℃`
+      : null;
+  const windParts = [];
+  if (typeof current.windDirection === "string" && current.windDirection) {
+    windParts.push(current.windDirection);
+  }
+  if (typeof current.windGust === "number" && Number.isFinite(current.windGust)) {
+    windParts.push(`阵风 ${current.windGust.toFixed(1)} m/s`);
+  }
+  const sunText =
+    current.sunrise && current.sunset
+      ? `${current.sunrise} / ${current.sunset}`
+      : current.sunrise || current.sunset || "—";
+
+  const items = [
+    ["天气现象", typeof current.weather === "string" && current.weather ? current.weather : "—"],
+    ["观测时刻", typeof current.timeLabel === "string" && current.timeLabel ? current.timeLabel : "—"],
+    ["气温", withNote(formatValue(current.temperature, "℃", 1), dewNote)],
+    ["相对湿度", formatValue(current.humidity, "%", 0)],
+    ["风速", withNote(formatValue(current.windSpeed, "m/s", 1), windParts.join(" · "))],
+    ["降水概率", formatValue(current.precipProbability, "%", 0)],
+    ["近 1 小时降水", formatValue(current.precipitation1h, "mm", 1)],
+    ["今日 ET₀", formatValue(current.et0Today, "mm", 1)],
+    ["云量", formatValue(current.cloudCover, "%", 0)],
+    ["饱和水汽压差", formatValue(current.vpd, "kPa", 2)],
+    ["地面气压", formatValue(current.pressure, "hPa", 1)],
+    ["叶面湿润概率", formatValue(current.leafWetness, "%", 0)],
+    ["根区土壤湿度", formatValue(current.soilMoisture, "%", 1)],
+    ["土壤温度 6cm", formatValue(current.soilTemperature, "℃", 1)],
+    ["日出 / 日落", sunText],
+  ];
+
+  const nodes = items.map(([label, value]) => {
+    const box = el("div", "condition");
+    box.append(el("div", "condition__label", label), el("div", "condition__value", value));
+    return box;
+  });
+
+  // 墒情剖面：只展示有值的层，整组都缺测时连同标题一起隐藏。
+  const profile = renderSoilProfile(current.soilProfile);
+  if (profile) nodes.push(profile);
+
+  els.conditions.hidden = false;
+  els.conditions.replaceChildren(...nodes);
+}
+
+/**
+ * 分层墒情剖面：把 0–1 / 3–9 / 9–27 / 27–81 cm 的土壤含水量按层画成横条，
+ * 便于看出表层失水而深层仍有墒（或反之）——加权平均值看不出这件事。
+ * 条形宽度按体积含水量百分比直接取，相对田间持水量的位置由刻度线标出。
+ */
+function renderSoilProfile(layers) {
+  const usable = Array.isArray(layers)
+    ? layers.filter(
+        (item) =>
+          item && typeof item.label === "string" && typeof item.value === "number" && Number.isFinite(item.value),
+      )
+    : [];
+  if (usable.length === 0) return null;
+
+  const box = el("div", "soil-profile");
+  const head = el("div", "soil-profile__head");
+  head.append(
+    el("span", "soil-profile__title", "墒情剖面"),
+    el("span", "soil-profile__hint", "体积含水量（按层）"),
+  );
+
+  const rows = usable.map((layer) => {
+    const row = el("div", "soil-profile__row");
+    const percent = Math.max(0, Math.min(100, layer.value));
+    row.append(el("span", "soil-profile__depth", layer.label));
+    const track = el("span", "soil-profile__track");
+    const fill = el("span", "soil-profile__fill");
+    fill.style.width = `${percent}%`;
+    track.append(fill);
+    row.append(track, el("span", "soil-profile__value", `${layer.value.toFixed(1)} %`));
+    return row;
+  });
+
+  box.append(head, ...rows);
+  return box;
+}
+
+/** 主值后附带补充说明；主值缺测时只保留“—”，不附加孤立的说明文字。 */
+function withNote(main, note) {
+  if (main === "—" || !note) return main;
+  return `${main}（${note}）`;
 }
 
 function renderNotices(data) {
@@ -404,19 +715,158 @@ function renderNotices(data) {
   els.notices.replaceChildren(list);
 }
 
-function renderCard(card) {
+/** 变量完整度 → 中文说明，用于「数据来源」区块。 */
+const TIER_LABELS = {
+  full: "全部变量（含叶面湿润、VPD、深层土壤湿度）",
+  extended: "部分农业变量（缺叶面湿润、VPD、深层土壤湿度）",
+  core: "仅核心变量",
+};
+
+/**
+ * Open-Meteo 变量名 → 中文。清单里同时保留原始变量名，
+ * 用户既能读懂"取了什么"，也能拿中文名去核对上游文档。
+ */
+const VARIABLE_LABELS = {
+  temperature_2m: "气温",
+  relative_humidity_2m: "相对湿度",
+  dew_point_2m: "露点",
+  precipitation: "降水",
+  precipitation_probability: "降水概率",
+  weather_code: "天气现象代码",
+  wind_speed_10m: "风速",
+  wind_direction_10m: "风向",
+  wind_gusts_10m: "阵风",
+  et0_fao_evapotranspiration: "参考蒸散 ET₀",
+  soil_moisture_0_to_1cm: "土壤湿度 0–1 cm",
+  soil_moisture_3_to_9cm: "土壤湿度 3–9 cm",
+  soil_moisture_9_to_27cm: "土壤湿度 9–27 cm",
+  soil_moisture_27_to_81cm: "土壤湿度 27–81 cm",
+  soil_temperature_6cm: "土壤温度 6 cm",
+  cloud_cover: "云量",
+  leaf_wetness_probability: "叶面湿润概率",
+  vapour_pressure_deficit: "饱和水汽压差 VPD",
+  surface_pressure: "地面气压",
+  temperature_2m_max: "最高气温",
+  temperature_2m_min: "最低气温",
+  precipitation_sum: "日降水量",
+  precipitation_probability_max: "最大降水概率",
+  wind_speed_10m_max: "最大风速",
+  wind_gusts_10m_max: "最大阵风",
+  wind_direction_10m_dominant: "主导风向",
+  sunrise: "日出",
+  sunset: "日落",
+  daylight_duration: "昼长",
+};
+
+/** 一组变量清单：标题 + 中文名/原始名成对的 chip。 */
+function renderVariableGroup(title, names) {
+  if (names.length === 0) return null;
+  const wrapper = el("div", "sources__group");
+  wrapper.append(el("p", "sources__vars", `${title}（${names.length}）`));
+
+  const list = el("ul", "sources__chips");
+  for (const name of names) {
+    if (typeof name !== "string" || !name) continue;
+    const chip = el("li", "sources__chip");
+    const label = VARIABLE_LABELS[name];
+    if (label) chip.append(el("span", "sources__chip-label", label));
+    chip.append(el("code", "sources__chip-name", name));
+    list.append(chip);
+  }
+  wrapper.append(list);
+  return wrapper;
+}
+
+/**
+ * 数据来源与本次变量：把"建议到底用了哪些公开数据"摊开，供用户核对。
+ * 缺字段时整块隐藏，避免出现空壳。
+ */
+function renderSources(data) {
+  if (!els.sources || !els.sourcesBody) return;
+  const source = data.source && typeof data.source === "object" ? data.source : null;
+  const hourly = source && Array.isArray(source.hourlyVariables) ? source.hourlyVariables : [];
+  const daily = source && Array.isArray(source.dailyVariables) ? source.dailyVariables : [];
+  if (!source || (hourly.length === 0 && daily.length === 0)) {
+    els.sources.hidden = true;
+    els.sourcesBody.replaceChildren();
+    return;
+  }
+
+  const facts = [
+    ["气象与土壤数据", `${source.weather || "Open-Meteo"}（${source.license || "CC BY 4.0"}）`],
+    ["本次取数方式", source.cache === "HIT" ? "命中 1 小时缓存" : "实时请求上游接口"],
+    ["变量完整度", TIER_LABELS[source.variableTier] || source.variableTier || "—"],
+    ["地区反查", "OpenStreetMap（Nominatim / Photon）"],
+    ["城市检索", "Open-Meteo Geocoding API"],
+    ["模型口径", "逐日与逐时数据为数值模式输出；past_days 为过去的模式预报，非气象站实测"],
+  ];
+
+  const list = el("dl", "sources__facts");
+  for (const [label, value] of facts) {
+    const row = el("div", "sources__row");
+    row.append(el("dt", undefined, label), el("dd", undefined, value));
+    list.append(row);
+  }
+
+  const groups = [
+    renderVariableGroup("逐时变量", hourly),
+    renderVariableGroup("逐日变量", daily),
+  ].filter(Boolean);
+
+  els.sourcesBody.replaceChildren(list, ...groups);
+  els.sources.hidden = false;
+}
+
+function renderCard(card, focusId) {
   const level = LEVEL_LABELS[card.level] ? card.level : "ok";
-  const article = el("article", `card card--${level}`);
+  // summary.focusId 指明“今日重点”，高亮它，摘要里的结论才有对应的落点。
+  const isFocus = typeof focusId === "string" && focusId !== "" && card.id === focusId;
+  const article = el("article", `card card--${level}${isFocus ? " card--focus" : ""}`);
+  if (isFocus) article.dataset.focus = "true";
 
   const head = el("div", "card__head");
   head.append(
     el("span", "card__category", card.category || ""),
     el("span", "badge", card.levelLabel || LEVEL_LABELS[level]),
   );
+  if (isFocus) head.append(el("span", "card__focus-tag", "今日重点"));
 
   article.append(head);
   article.append(el("h2", "card__headline", card.headline || ""));
   article.append(el("p", "card__reason", card.reason || ""));
+
+  // 作业窗口条：把决策层算出的候选时段画成时间轴，而不是只用文字罗列。
+  const windows = Array.isArray(card.sprayWindows) ? card.sprayWindows : [];
+  const usableWindows = windows.filter(
+    (item) => item && typeof item.start === "string" && typeof item.end === "string",
+  );
+  if (usableWindows.length > 0) {
+    article.append(el("p", "card__section-label", "候选作业时段"));
+    const list = el("ul", "spray-list");
+    for (const window of usableWindows) {
+      const row = el("li", "spray-window");
+      const score = typeof window.score === "number" && Number.isFinite(window.score) ? window.score : null;
+      // 适宜度同时用文字与条形表达，避免只靠颜色传递信息。
+      if (score !== null) row.className = `spray-window spray-window--${score >= 75 ? "good" : score >= 60 ? "fair" : "poor"}`;
+
+      const time = el("span", "spray-window__time", `${formatHour(window.start)} – ${formatHour(window.end)}`);
+      const meta = el("span", "spray-window__meta");
+      meta.append(
+        el("span", undefined, `${Number.isFinite(window.hours) ? window.hours : "—"} 小时`),
+        el("span", undefined, score === null ? "适宜度 —" : `适宜度 ${score}`),
+      );
+      row.append(time, meta);
+      if (score !== null) {
+        const bar = el("span", "spray-window__bar");
+        const fill = el("span", "spray-window__fill");
+        fill.style.width = `${Math.max(0, Math.min(100, score))}%`;
+        bar.append(fill);
+        row.append(bar);
+      }
+      list.append(row);
+    }
+    article.append(list);
+  }
 
   if (Array.isArray(card.actions) && card.actions.length > 0) {
     article.append(el("p", "card__section-label", "操作建议"));

@@ -6,7 +6,7 @@
  */
 
 import { LEVEL_LABEL, LEVEL_RANK } from "./types";
-import type { AdviceCard, AdviceLevel, Metric } from "./types";
+import type { AdviceCard, AdviceLevel, Metric, SprayWindowView } from "./types";
 
 /** 把未知输入转成数字，不可用则返回 NaN。 */
 export function toNum(value: unknown): number {
@@ -149,8 +149,9 @@ export function makeCard(input: {
   reason: string;
   actions: string[];
   metrics?: Metric[];
+  sprayWindows?: SprayWindowView[];
 }): AdviceCard {
-  return {
+  const card: AdviceCard = {
     id: input.id,
     category: input.category,
     level: input.level,
@@ -160,6 +161,10 @@ export function makeCard(input: {
     actions: input.actions,
     metrics: input.metrics ?? [],
   };
+  if (input.sprayWindows && input.sprayWindows.length > 0) {
+    card.sprayWindows = input.sprayWindows;
+  }
+  return card;
 }
 
 /**

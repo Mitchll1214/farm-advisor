@@ -28,6 +28,18 @@ export interface Metric {
   value: string;
 }
 
+/** 一个可作业时段，用于「喷洒窗口」卡片上的时间轴。 */
+export interface SprayWindowView {
+  /** 起始时刻，原样保留 Open-Meteo 的 "YYYY-MM-DDTHH:00"。 */
+  start: string;
+  /** 结束时刻（含该小时）。 */
+  end: string;
+  /** 连续可作业小时数。 */
+  hours: number;
+  /** 该时段适宜度 0–100。 */
+  score: number;
+}
+
 /** 一张中文建议卡片：结论 + 原因 + 操作建议。 */
 export interface AdviceCard {
   id: string;
@@ -41,6 +53,8 @@ export interface AdviceCard {
   /** 操作建议：可直接执行的农事动作。 */
   actions: string[];
   metrics: Metric[];
+  /** 候选作业时段；目前仅「喷洒窗口」卡片会带，供前端画时间轴。 */
+  sprayWindows?: SprayWindowView[];
 }
 
 /** Open-Meteo hourly 变量规范化结果。缺失值一律为 NaN。 */
@@ -51,7 +65,11 @@ export interface HourlySeries {
   dewPoint: number[];
   precipitation: number[];
   precipProbability: number[];
+  /** WMO 天气现象代码（0–99），缺失为 NaN。 */
+  weatherCode: number[];
   windSpeed: number[];
+  /** 风向，气象学定义（风的来向），单位度，0 = 北风。 */
+  windDirection: number[];
   windGust: number[];
   et0: number[];
   soilMoisture0to1: number[];
@@ -64,6 +82,8 @@ export interface HourlySeries {
   leafWetness: number[];
   /** 饱和水汽压差 kPa，缺失为 NaN。 */
   vpd: number[];
+  /** 地面气压 hPa，缺失为 NaN。用于判断逆温（静稳）条件，影响喷洒飘移与霜冻。 */
+  surfacePressure: number[];
 }
 
 /** Open-Meteo daily 变量规范化结果。缺失值一律为 NaN。 */
@@ -75,6 +95,18 @@ export interface DailySeries {
   et0: number[];
   precipProbabilityMax: number[];
   windSpeedMax: number[];
+  /** 当日最大阵风 m/s，缺失为 NaN。阵风是喷洒作业的硬性排除条件。 */
+  windGustMax: number[];
+  /** 当日主导 WMO 天气现象代码，缺失为 NaN。 */
+  weatherCode: number[];
+  /** 当日主导风向（来向，度），缺失为 NaN。 */
+  windDirectionDominant: number[];
+  /** 日出时刻，Open-Meteo 本地时间字符串 "YYYY-MM-DDTHH:MM"；缺失为空串。 */
+  sunrise: string[];
+  /** 日落时刻，格式同 sunrise。 */
+  sunset: string[];
+  /** 昼长，秒。 */
+  daylightDuration: number[];
 }
 
 /** 一次请求拿到的全部气象/土壤数据。 */
@@ -96,6 +128,8 @@ export interface WeatherBundle {
   degradedVariables: boolean;
   /** 变量完整度：full 全部变量；extended 缺新增农业变量；core 仅核心变量。 */
   variableTier: "full" | "extended" | "core";
+  /** 本次实际向上游请求的变量名清单（已按降级档位裁剪），用于页面核对数据来源。 */
+  requestedVariables: { hourly: string[]; daily: string[] };
 }
 
 /** 作物分组，用于前端下拉框分组展示。 */
@@ -292,16 +326,83 @@ export interface AdvisoryResult {
   notices: string[];
 }
 
+/**
+ * 页面「未来 7 天」区块的一行。
+ * 全部字段直接来自 Open-Meteo 的 daily 响应，缺失值为 null；
+ * effectivePrecipitation 与 balance 是按地区有效降水系数和作物 Kc 换算的派生量。
+ */
+export interface DailyForecastDay {
+  /** 日期，YYYY-MM-DD。 */
+  date: string;
+  tMax: number | null;
+  tMin: number | null;
+  /** 日降水总量 mm。 */
+  precipitation: number | null;
+  /** 日最大降水概率 %。 */
+  precipProbability: number | null;
+  /** 日最大风速 m/s。 */
+  windSpeedMax: number | null;
+  /** 日最大阵风 m/s；阵风是喷洒作业的硬性排除条件。 */
+  windGustMax: number | null;
+  /** 参考蒸散 ET₀ mm，与水分盈亏同源。 */
+  et0: number | null;
+  /** 有效降水 mm = 降水 × 地区有效降水系数。 */
+  effectivePrecipitation: number | null;
+  /** 昼长小时数（由 daylight_duration 秒换算）。 */
+  daylightHours: number | null;
+  /** 当日主导天气现象，WMO 代码对应的中文描述；缺失为 null。 */
+  weather: string | null;
+  /** 当日主导风向方位，如「西北风」；缺失为 null。 */
+  windDirection: string | null;
+  /** 日出时刻，本地时间 "HH:MM"；缺失为 null。 */
+  sunrise: string | null;
+  /** 日落时刻，本地时间 "HH:MM"；缺失为 null。 */
+  sunset: string | null;
+  /** 有效降水 − 作物蒸散 ETc，mm（正为盈余、负为亏缺）。 */
+  balance: number | null;
+}
+
+/** 一层土壤湿度的展示项，供页面画墒情剖面。 */
+export interface SoilLayerView {
+  /** 层名，如「0–1 cm」。 */
+  label: string;
+  /** 体积含水量 %；缺失为 null。 */
+  value: number | null;
+}
+
 /** 页面顶部“当前条件”条的数据。 */
 export interface CurrentConditions {
   timeLabel: string;
   temperature: number | null;
   humidity: number | null;
   windSpeed: number | null;
+  /** 当前阵风 m/s；它是喷洒窗口的硬性排除条件之一。 */
+  windGust: number | null;
+  /** 风向方位，如「西北风」；缺失为 null。 */
+  windDirection: string | null;
+  /** 当前天气现象（WMO 代码对应的中文描述）；缺失为 null。 */
+  weather: string | null;
+  /** 露点温度 ℃：与气温接近时易结露，是病害风险的前兆。 */
+  dewPoint: number | null;
+  /** 云量 %。 */
+  cloudCover: number | null;
+  /** 饱和水汽压差 kPa。 */
+  vpd: number | null;
+  /** 地面气压 hPa：气压梯度小的静稳天气易形成逆温，不利于喷洒扩散。 */
+  pressure: number | null;
+  /** 叶面湿润概率 %。 */
+  leafWetness: number | null;
+  /** 当前小时降水概率 %。 */
+  precipProbability: number | null;
   soilMoisture: number | null;
+  /** 分层土壤湿度剖面（0–1 / 3–9 / 9–27 / 27–81 cm）。 */
+  soilProfile: SoilLayerView[];
   soilTemperature: number | null;
   precipitation1h: number | null;
   et0Today: number | null;
+  /** 今日日出/日落（本地 "HH:MM"）；缺失为 null。 */
+  sunrise: string | null;
+  sunset: string | null;
 }
 
 export type AdvisoryErrorCode =
@@ -314,16 +415,30 @@ export interface AdvisorySuccess {
   ok: true;
   generatedAt: string;
   location: ResolvedLocation;
+  /** 参考点海拔 m，来自 Open-Meteo；缺失为 null。 */
+  elevation: number | null;
   crop: { id: string; name: string };
   /** 本次建议采用的地区口径；未识别到省份时为 null。 */
   region: RegionInfo | null;
   /** 作物是自动选取还是用户指定，以及自动选取的依据。 */
   selection: CropSelection | null;
   current: CurrentConditions;
+  /** 未来逐日预报；数据不足时为空数组。 */
+  forecast: DailyForecastDay[];
   summary: AdvisorySummary;
   cards: AdviceCard[];
   notices: string[];
-  source: { weather: string; cache: "HIT" | "MISS" };
+  source: {
+    weather: string;
+    cache: "HIT" | "MISS";
+    /** 变量完整度：full 全部变量；extended 缺新增农业变量；core 仅核心变量。 */
+    variableTier: WeatherBundle["variableTier"];
+    /** 本次实际向上游请求的变量清单，供页面「数据来源」区块核对。 */
+    hourlyVariables: string[];
+    dailyVariables: string[];
+    /** 上游数据源署名（CC BY 4.0 要求）。 */
+    license: string;
+  };
 }
 
 export interface AdvisoryFailure {

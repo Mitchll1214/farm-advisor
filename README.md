@@ -10,7 +10,9 @@
 
 > **它是什么** · 部署在 Cloudflare Pages 上的中文农事建议网站，静态页面 + Pages Functions。
 > **它做什么** · 按访问者所在位置识别省份，自动选取当季主栽作物，套用该地区主要土类与水文参数，给出灌溉、霜冻、积温、干旱、喷洒窗口等 7 类结论化建议。
-> **它不做什么** · 不展示原始气象数字，不替代实地农艺指导，不用于商业用途。
+> **它不做什么** · 不做泛泛的天气预报，不替代实地农艺指导，不用于商业用途。
+>
+> **展示口径** · 页面展示支撑判断所必需的气象要素（天气现象、观测时刻、气温与露点、湿度、风向风速与阵风、降水概率、云量与 VPD、**气压**、**分层墒情**、逐日雨温、ET₀ 与日出日落）与地区参数，供你核对结论是否对得上；具体建议仍是结论化的，不堆砌原始数据。页脚「数据来源与本次变量」会按中文名 + 原始变量名列出本次实际请求的 Open-Meteo 变量清单。
 
 `Cloudflare Pages` · `TypeScript` · `无构建步骤` · `运行时零依赖` · `免费额度内运行`
 
@@ -63,7 +65,25 @@
 | 水分盈亏 | 未来 7 天「有效降水 − 作物 ETc」累计盈亏与亏缺天数 |
 | 病虫害风险 | 气象驱动的发生条件推断（等级上限为「预警」，不作为施药依据） |
 
-另外：**32 种作物档案**（通用大田作物、玉米、春玉米、夏玉米、冬小麦、水稻、早稻、晚稻、大豆、马铃薯、番茄、大白菜、黄瓜、辣椒、油菜、棉花、苹果、梨、桃、葡萄、花生、芝麻、甘薯、高粱、谷子、甘蔗、向日葵、烟叶、茶、柑橘、苜蓿、青贮玉米）、**34 个省级地区档案**、**按地区自动选取当季作物**（可手动覆盖并给出**同季**备选）、**可选播种期与 FAO-56 Kc 阶段物候**、**三级定位**、**1 小时缓存**、页脚常驻的**免责声明与隐私说明**。
+另外：**32 种作物档案**（通用大田作物、玉米、春玉米、夏玉米、冬小麦、水稻、早稻、晚稻、大豆、马铃薯、番茄、大白菜、黄瓜、辣椒、油菜、棉花、苹果、梨、桃、葡萄、花生、芝麻、甘薯、高粱、谷子、甘蔗、向日葵、烟叶、茶、柑橘、苜蓿、青贮玉米）、**34 个省级地区档案**、**按地区自动选取当季作物**（可手动覆盖并给出**同季**备选）、**可选播种期与 FAO-56 Kc 阶段物候**、**三级定位**、**1 小时缓存**、页脚常驻的**免责声明、隐私说明与数据来源清单**。
+
+### 页面上还有这些核对用信息
+
+建议卡片之外，页面把「结论是怎么算出来的」摊开供核对，数据全部来自同一份公开气象响应，不额外请求：
+
+| 区块 | 内容 |
+| --- | --- |
+| 数据参考地 | 本次实际使用的地名、省份识别方式（网络定位省码 / 地名匹配 / 按坐标反查）、坐标、定位来源与精度、**海拔**、时区、当前作物 |
+| 生育进度 | 有播种期时显示物候阶段、当前 Kc、进度条，以及播种以来积温 / 全生育期参考积温 |
+| 当前条件 | **天气现象**、**观测时刻**、气温（含**露点**）、相对湿度、风速（含**风向**与**阵风**）、**降水概率**、近 1 小时降水、今日 ET₀、**云量**、**饱和水汽压差 VPD**、**地面气压**、**叶面湿润概率**、根区土壤湿度、6 cm 土壤温度、**日出 / 日落** |
+| 墒情剖面 | 0–1 / 3–9 / 9–27 / 27–81 cm 四层土壤体积含水量按层画成横条，能看出「表层失水而深层仍有墒」，而不只是一个加权平均值；整组缺测时连同标题一起隐藏 |
+| 地区参数口径 | 数据参考地、气候区、种植制度、主要土类、有效降水系数、省份识别方式 |
+| 未来逐日 | 逐日**天气现象**、最高/最低气温、降水量与降水概率、**风向**与最大风速、**最大阵风**、**ET₀**、**有效降水**、**昼长**、**日出/日落**，以及「有效降水 − 作物 ETc」盈亏 |
+| 今日重点 | 摘要指向的那张卡片会加框并标注「今日重点」，不必自己猜哪条最急 |
+| 候选作业时段 | 喷洒窗口卡片把候选时段画成「时间 + 时长 + 适宜度」列表，而不只是文字描述 |
+| 数据来源与本次变量 | 页脚折叠块：数据源与许可、本次是缓存还是实时、变量完整度、反查与检索所用接口、**按中文名 + 原始变量名成对列出的逐时/逐日变量**，以及「past_days 为模式回算而非站点实测」的口径说明 |
+
+缺测一律显示「—」，不会出现 `NaN`；变量完整度降级时，摘要行会注明「仅核心变量」或「部分农业变量缺失」。
 
 ---
 
@@ -216,6 +236,7 @@ Pages Function  functions/api/advisony.ts
   "generatedAt": "2026-09-20T06:12:33.000Z",
   "location": { "name": "潍坊", "region": "山东省", "lat": 36.71, "lon": 119.1,
                 "source": "ip", "timezone": "Asia/Shanghai" },
+  "elevation": 34,
   "crop": { "id": "corn_summer", "name": "夏玉米" },
   "region": { "code": "SD", "name": "山东省", "climateZone": "黄淮海平原",
               "croppingSystem": "一年两熟", "soilNote": "潮土与棕壤，胶东丘陵偏砂",
@@ -228,8 +249,24 @@ Pages Function  functions/api/advisony.ts
                                 "progress": 0.62, "gddSinceSowing": 713,
                                 "gddToMaturity": 1150 } },
   "current": { "timeLabel": "9月20日 14:00", "temperature": 24.3, "humidity": 62,
-               "windSpeed": 2.1, "soilMoisture": 19.0, "soilTemperature": 22.8,
-               "precipitation1h": 0, "et0Today": 3.4 },
+               "windSpeed": 2.1, "windGust": 4.6, "windDirection": "东南风",
+               "weather": "多云", "dewPoint": 16.4, "cloudCover": 65, "vpd": 1.08,
+               "pressure": 1008.6,
+               "leafWetness": 12, "precipProbability": 20,
+               "soilMoisture": 19.0,
+               "soilProfile": [ { "label": "0–1 cm", "value": 14.2 }, { "label": "3–9 cm", "value": 16.8 },
+                                { "label": "9–27 cm", "value": 19.4 }, { "label": "27–81 cm", "value": 21.1 } ],
+               "soilTemperature": 22.8,
+               "precipitation1h": 0, "et0Today": 3.4,
+               "sunrise": "05:52", "sunset": "18:07" },
+  "forecast": [
+    { "date": "2026-09-20", "tMax": 27.1, "tMin": 16.2, "precipitation": 0.4,
+      "precipProbability": 20, "windSpeedMax": 11.2, "windGustMax": 18.6,
+      "et0": 3.4, "effectivePrecipitation": 0.3, "daylightHours": 12.3,
+      "weather": "多云",
+      "windDirection": "东南风", "sunrise": "05:52", "sunset": "18:07",
+      "balance": -3.6 }
+  ],
   "summary": { "level": "warn", "headline": "根区水分偏低，建议灌溉约 45 mm", "focusId": "irrigation" },
   "cards": [
     {
@@ -238,10 +275,34 @@ Pages Function  functions/api/advisony.ts
       "reason": "根区土壤体积含水量 19.0 %……",
       "actions": ["建议灌溉量约 45 mm，分次给水，避免大水漫灌造成深层渗漏", "……"],
       "metrics": [{ "label": "根区土壤湿度", "value": "19.0 %" }]
+    },
+    {
+      "id": "spray", "category": "喷洒窗口", "level": "ok", "levelLabel": "平稳",
+      "headline": "适宜作业：9月21日 06:00 起 3 小时（88 分）",
+      "reason": "判定条件：风速 ≤ 5 m/s……",
+      "actions": ["选择清晨露水干后或傍晚作业，此时风速低、蒸发损失小", "……"],
+      "metrics": [{ "label": "窗口适宜度", "value": "88 / 100" }],
+      "sprayWindows": [
+        { "start": "2026-09-21T06:00", "end": "2026-09-21T08:00", "hours": 3, "score": 88 }
+      ]
     }
   ],
   "notices": ["土壤水文参数已按山东省（黄淮海平原）主要土类修正：潮土与棕壤，胶东丘陵偏砂；有效降水系数取 0.82。"],
-  "source": { "weather": "Open-Meteo", "cache": "MISS" }
+  "source": { "weather": "Open-Meteo", "cache": "MISS", "variableTier": "full",
+              "license": "CC BY 4.0",
+              "hourlyVariables": ["temperature_2m", "relative_humidity_2m", "dew_point_2m",
+                                  "precipitation", "precipitation_probability", "weather_code",
+                                  "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m",
+                                  "et0_fao_evapotranspiration", "soil_moisture_0_to_1cm",
+                                  "soil_moisture_3_to_9cm", "soil_moisture_9_to_27cm",
+                                  "soil_moisture_27_to_81cm", "soil_temperature_6cm",
+                                  "cloud_cover", "leaf_wetness_probability",
+                                  "vapour_pressure_deficit", "surface_pressure"],
+              "dailyVariables": ["temperature_2m_max", "temperature_2m_min", "precipitation_sum",
+                                 "et0_fao_evapotranspiration", "precipitation_probability_max",
+                                 "wind_speed_10m_max", "wind_gusts_10m_max", "weather_code",
+                                 "wind_direction_10m_dominant", "sunrise", "sunset",
+                                 "daylight_duration"] }
 }
 ```
 

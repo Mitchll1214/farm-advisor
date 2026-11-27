@@ -23,7 +23,9 @@ const FULL_HOURLY = [
   "dew_point_2m",
   "precipitation",
   "precipitation_probability",
+  "weather_code",
   "wind_speed_10m",
+  "wind_direction_10m",
   "wind_gusts_10m",
   "et0_fao_evapotranspiration",
   "soil_moisture_0_to_1cm",
@@ -34,6 +36,7 @@ const FULL_HOURLY = [
   "cloud_cover",
   "leaf_wetness_probability",
   "vapour_pressure_deficit",
+  "surface_pressure",
 ];
 
 /**
@@ -47,7 +50,9 @@ const EXTENDED_HOURLY = [
   "dew_point_2m",
   "precipitation",
   "precipitation_probability",
+  "weather_code",
   "wind_speed_10m",
+  "wind_direction_10m",
   "wind_gusts_10m",
   "et0_fao_evapotranspiration",
   "soil_moisture_0_to_1cm",
@@ -55,6 +60,7 @@ const EXTENDED_HOURLY = [
   "soil_moisture_9_to_27cm",
   "soil_temperature_6cm",
   "cloud_cover",
+  "surface_pressure",
 ];
 
 const FULL_DAILY = [
@@ -64,18 +70,43 @@ const FULL_DAILY = [
   "et0_fao_evapotranspiration",
   "precipitation_probability_max",
   "wind_speed_10m_max",
+  "wind_gusts_10m_max",
+  "weather_code",
+  "wind_direction_10m_dominant",
+  "sunrise",
+  "sunset",
+  "daylight_duration",
 ];
 
-/** 精简变量集：万一上游对某些农业变量返回 400，用它降级重试，保证页面仍有建议。 */
+/**
+ * 精简变量集：万一上游对某些农业变量返回 400，用它降级重试，保证页面仍有建议。
+ * 天气现象、风向阵风、露点与云量都属于长期稳定的基础变量，降级时保留，
+ * 否则页面会在降级时突然丢掉"今天什么天、风往哪吹"这类最基本的核对信息。
+ */
 const CORE_HOURLY = [
   "temperature_2m",
   "relative_humidity_2m",
+  "dew_point_2m",
   "precipitation",
+  "weather_code",
   "wind_speed_10m",
+  "wind_direction_10m",
+  "wind_gusts_10m",
+  "cloud_cover",
   "et0_fao_evapotranspiration",
 ];
 
-const CORE_DAILY = ["temperature_2m_max", "temperature_2m_min", "precipitation_sum"];
+const CORE_DAILY = [
+  "temperature_2m_max",
+  "temperature_2m_min",
+  "precipitation_sum",
+  "weather_code",
+  "wind_speed_10m_max",
+  "wind_direction_10m_dominant",
+  "sunrise",
+  "sunset",
+  "daylight_duration",
+];
 
 export class WeatherError extends Error {
   readonly code: string;
@@ -134,7 +165,10 @@ export async function fetchWeather(
         hourly: tier.hourly,
         daily: tier.daily,
       });
-      return normalize(payload, latitude, longitude, tier.tier);
+      return normalize(payload, latitude, longitude, tier.tier, {
+        hourly: tier.hourly,
+        daily: tier.daily,
+      });
     } catch (error) {
       lastError = error;
       const rejectable =
@@ -200,6 +234,7 @@ function normalize(
   latitude: number,
   longitude: number,
   variableTier: WeatherBundle["variableTier"],
+  requested: { hourly: string[]; daily: string[] },
 ): WeatherBundle {
   const hourlyRaw = asRecord(payload.hourly);
   const dailyRaw = asRecord(payload.daily);
@@ -216,7 +251,9 @@ function normalize(
     dewPoint: column(hourlyRaw, "dew_point_2m", hourlyLength),
     precipitation: column(hourlyRaw, "precipitation", hourlyLength),
     precipProbability: column(hourlyRaw, "precipitation_probability", hourlyLength),
+    weatherCode: column(hourlyRaw, "weather_code", hourlyLength),
     windSpeed: column(hourlyRaw, "wind_speed_10m", hourlyLength),
+    windDirection: column(hourlyRaw, "wind_direction_10m", hourlyLength),
     windGust: column(hourlyRaw, "wind_gusts_10m", hourlyLength),
     et0: column(hourlyRaw, "et0_fao_evapotranspiration", hourlyLength),
     soilMoisture0to1: column(hourlyRaw, "soil_moisture_0_to_1cm", hourlyLength),
@@ -227,6 +264,7 @@ function normalize(
     cloudCover: column(hourlyRaw, "cloud_cover", hourlyLength),
     leafWetness: column(hourlyRaw, "leaf_wetness_probability", hourlyLength),
     vpd: column(hourlyRaw, "vapour_pressure_deficit", hourlyLength),
+    surfacePressure: column(hourlyRaw, "surface_pressure", hourlyLength),
   };
 
   const daily: DailySeries = {
@@ -237,6 +275,12 @@ function normalize(
     et0: column(dailyRaw, "et0_fao_evapotranspiration", dailyLength),
     precipProbabilityMax: column(dailyRaw, "precipitation_probability_max", dailyLength),
     windSpeedMax: column(dailyRaw, "wind_speed_10m_max", dailyLength),
+    windGustMax: column(dailyRaw, "wind_gusts_10m_max", dailyLength),
+    weatherCode: column(dailyRaw, "weather_code", dailyLength),
+    windDirectionDominant: column(dailyRaw, "wind_direction_10m_dominant", dailyLength),
+    sunrise: asStringArray(dailyRaw.sunrise),
+    sunset: asStringArray(dailyRaw.sunset),
+    daylightDuration: column(dailyRaw, "daylight_duration", dailyLength),
   };
 
   const rawOffset = toNum(payload.utc_offset_seconds);
@@ -258,6 +302,7 @@ function normalize(
     fetchedAt: new Date().toISOString(),
     degradedVariables: variableTier !== "full",
     variableTier,
+    requestedVariables: { hourly: requested.hourly, daily: requested.daily },
   };
 }
 

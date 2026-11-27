@@ -627,6 +627,290 @@ a {
   line-height: 1.3;
 }
 
+/* —— 墒情剖面：分层土壤湿度按层画条，看出表层失水而深层仍有墒 —— */
+
+.soil-profile {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  padding-top: var(--space-xs);
+  border-top: var(--rule-hair) solid var(--rule);
+}
+
+.soil-profile__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  font-size: var(--text-xs);
+}
+
+.soil-profile__title {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.soil-profile__hint {
+  font-size: var(--text-2xs);
+  color: var(--ink-2);
+}
+
+.soil-profile__row {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr) 4rem;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: var(--text-2xs);
+}
+
+.soil-profile__depth {
+  font-family: var(--font-mono);
+  color: var(--ink-2);
+}
+
+.soil-profile__track {
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--paper-3);
+  overflow: hidden;
+}
+
+.soil-profile__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand);
+}
+
+.soil-profile__value {
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+/* —— 生育进度：把物候 progress 变成可见的条 —— */
+
+.pheno {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  padding-top: var(--space-xs);
+  border-top: var(--rule-hair) solid var(--rule);
+}
+
+.pheno__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  font-size: var(--text-xs);
+}
+
+.pheno__label {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.pheno__stage {
+  color: var(--ink);
+}
+
+.pheno__percent {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.pheno__track {
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--paper-3);
+  overflow: hidden;
+}
+
+.pheno__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--brand);
+}
+
+.pheno__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs) var(--space-md);
+  font-size: var(--text-2xs);
+  color: var(--ink-2);
+}
+
+/* —— 地区参数口径：把建议用到的地区假定值摊开 —— */
+
+.region-facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-md) var(--space-lg);
+  border: var(--rule-hair) solid var(--rule);
+  border-radius: var(--radius-card);
+  background: var(--paper-2);
+}
+
+.region-facts__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.region-facts__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.region-facts__badge {
+  padding: 0 var(--space-xs);
+  border: var(--rule-hair) solid var(--rule-2);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1.8;
+  color: var(--ink-2);
+}
+
+.region-facts__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-xs) var(--space-md);
+  margin: 0;
+}
+
+.region-facts__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  min-width: 0;
+}
+
+.region-facts__row dt {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+}
+
+.region-facts__row dd {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+/* —— 未来 7 天：逐日小格 —— */
+
+.forecast {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-lg);
+  border: var(--rule-hair) solid var(--rule);
+  border-radius: var(--radius-card);
+  background: var(--paper-2);
+}
+
+.forecast__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-xs);
+}
+
+.forecast__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.forecast__hint {
+  font-size: var(--text-2xs);
+  color: var(--ink-2);
+}
+
+.forecast__days {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: var(--space-xs);
+}
+
+.forecast__day {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+  padding: var(--space-xs);
+  border: var(--rule-hair) solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+}
+
+.forecast__date {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--ink-2);
+}
+
+/* 天气现象用正文字体，与等宽的日期区分开。 */
+.forecast__weather {
+  font-family: var(--font-body);
+  color: var(--ink);
+}
+
+.forecast__temp {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.forecast__tmin {
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+.forecast__rain,
+.forecast__wind,
+.forecast__balance,
+.forecast__sun {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  font-size: var(--text-2xs);
+}
+
+.forecast__rain-label,
+.forecast__wind-label,
+.forecast__balance-label,
+.forecast__sun-label {
+  color: var(--ink-2);
+}
+
+.forecast__balance--deficit {
+  color: var(--level-warn);
+}
+
+.forecast__balance--surplus {
+  color: var(--level-ok);
+}
+
 /* ==========================================================================
    10 · 提示条
    ========================================================================== */
@@ -806,6 +1090,82 @@ a {
   font-weight: 600;
 }
 
+/* —— 今日重点：摘要指向的那张卡片，用一圈框标出来 —— */
+
+.card--focus {
+  border-color: color-mix(in oklch, var(--level) 45%, var(--rule));
+  box-shadow: var(--shadow-card), 0 0 0 1px color-mix(in oklch, var(--level) 30%, transparent);
+}
+
+.card__focus-tag {
+  padding: 0 var(--space-2xs);
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--level) 14%, var(--paper-2));
+  color: color-mix(in oklch, var(--level) 72%, var(--ink));
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1.8;
+  white-space: nowrap;
+}
+
+/* —— 作业窗口：时间 + 时长 + 适宜度条 —— */
+
+.spray-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+.spray-window {
+  --window: var(--level-ok);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-3xs) var(--space-sm);
+  padding: var(--space-2xs) var(--space-xs);
+  border: var(--rule-hair) solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  font-size: var(--text-2xs);
+}
+
+.spray-window--fair {
+  --window: var(--level-watch);
+}
+
+.spray-window--poor {
+  --window: var(--level-warn);
+}
+
+.spray-window__time {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.spray-window__meta {
+  display: flex;
+  gap: var(--space-xs);
+  color: var(--ink-2);
+}
+
+.spray-window__bar {
+  grid-column: 1 / -1;
+  display: block;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--paper-3);
+  overflow: hidden;
+}
+
+.spray-window__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--window);
+}
+
 /* ==========================================================================
    12 · 加载 / 失败态
    ========================================================================== */
@@ -887,6 +1247,98 @@ a {
   max-width: 68ch;
   font-size: var(--text-xs);
   line-height: 1.8;
+  color: var(--ink-2);
+}
+
+/* —— 数据来源与本次变量：折叠块，让"数据从哪来"可以被核对 —— */
+
+.sources summary {
+  cursor: pointer;
+  font-size: var(--text-xs);
+  color: var(--brand);
+  white-space: nowrap;
+}
+
+.sources__body {
+  margin-top: var(--space-sm);
+  max-width: 68ch;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.sources__facts {
+  margin: 0;
+  display: grid;
+  gap: var(--space-2xs);
+}
+
+.sources__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  font-size: var(--text-2xs);
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+
+.sources__row dt {
+  min-width: 6.5rem;
+  color: var(--ink);
+}
+
+.sources__row dd {
+  margin: 0;
+  flex: 1 1 14rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sources__vars {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1.8;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+/* —— 变量清单：中文名 + 原始变量名成对列出，便于对照上游文档 —— */
+
+.sources__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+.sources__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sources__chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2xs);
+  padding: 0 var(--space-xs);
+  border: var(--rule-hair) solid var(--rule-2);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-2xs);
+  line-height: 1.9;
+  color: var(--ink-2);
+}
+
+.sources__chip-label {
+  color: var(--ink);
+}
+
+.sources__chip-name {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
   color: var(--ink-2);
 }
 

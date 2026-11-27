@@ -183,13 +183,15 @@ export function pestAdvice(ctx: AdvisoryContext): AdviceCard {
   actions.push("以田块实际调查结果为准，达到当地防治指标后再用药");
 
   const weightingText = region ? `，并按${region.name}的重点监测名单加权` : "";
+  // 命中对象多于详情里展开的三项时点明总数，避免用户以为只监测了这几项。
+  const moreText = hits.length > 3 ? `（另有 ${hits.length - 3} 项同样达到适宜条件，未逐项展开）` : "";
 
   return makeCard({
     id: "pest",
     category: "病虫害风险",
     level,
     headline: `气象条件有利于${names}发生发展`,
-    reason: `近 3 天平均气温 ${fmt(meanTemp, 1, "℃")}、近 72 小时平均相对湿度 ${fmt(humidity, 0, "%")}、叶面湿润 ${leafWetText}、累计降水 ${fmt(rain3, 1, "mm")}，达到以下模型的适宜发生条件——${detail}。本提示为气象驱动的风险推断${weightingText}，没有接入田块虫情与区域测报数据，不能替代田间调查。`,
+    reason: `近 3 天平均气温 ${fmt(meanTemp, 1, "℃")}、近 72 小时平均相对湿度 ${fmt(humidity, 0, "%")}、叶面湿润 ${leafWetText}、累计降水 ${fmt(rain3, 1, "mm")}，达到以下模型的适宜发生条件——${detail}${moreText}。本提示为气象驱动的风险推断${weightingText}，没有接入田块虫情与区域测报数据，不能替代田间调查。`,
     actions,
     metrics: [
       ...metricsCommon,

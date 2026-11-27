@@ -70,11 +70,16 @@
 
         <p id="crop-note" class="location__note" hidden></p>
         <div id="crop-alt" class="crop-alt" hidden></div>
+        <div id="pheno-bar" class="pheno" hidden aria-label="生育进度"></div>
       </section>
 
       <section id="summary-panel" class="summary" hidden aria-live="polite"></section>
 
       <section id="conditions-panel" class="conditions" hidden aria-label="当前气象条件"></section>
+
+      <section id="region-facts" class="region-facts" hidden aria-label="地区参数口径"></section>
+
+      <section id="forecast-panel" class="forecast" hidden aria-label="未来 7 天预报"></section>
 
       <div id="notices" class="notices" hidden></div>
 
@@ -105,6 +110,11 @@
             你手动选择的城市只保存在本机浏览器的 localStorage 中，点“切换城市 → 使用网络位置”
             即可清除。
           </p>
+        </details>
+
+        <details id="sources" class="sources" hidden>
+          <summary>数据来源与本次变量</summary>
+          <div id="sources-body" class="sources__body"></div>
         </details>
 
         <p class="footer__meta">

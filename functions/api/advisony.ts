@@ -22,7 +22,7 @@
  *   - 缓存不可用   → 直接跳过缓存，请求照常返回
  */
 
-import { generateAdvisory, buildCurrentConditions } from "../../src/decision/index";
+import { buildCurrentConditions, buildDailyForecast, generateAdvisory } from "../../src/decision/index";
 import { computePhenology } from "../../src/lib/agro";
 import { resolveCrop } from "../../src/lib/crops";
 import { applyRegion, matchRegion, rainFactorOf, recommendCrops, seasonForCrop } from "../../src/lib/regions";
@@ -39,6 +39,7 @@ import type {
   CropProfile,
   CropSelection,
   CurrentConditions,
+  DailyForecastDay,
   RegionInfo,
   RegionProfile,
   ResolvedLocation,
@@ -47,7 +48,7 @@ import type {
 import { round } from "../../src/lib/util";
 
 /** 缓存版本：调整响应结构或决策逻辑时递增，即可让旧缓存立即失效。 */
-const CACHE_VERSION = "v4";
+const CACHE_VERSION = "v7";
 const CACHE_TTL_SECONDS = 3600;
 /** 仅用于 Cache API 的内部 key，不对外暴露。 */
 const CACHE_HOST = "https://advisony.internal";
@@ -63,11 +64,19 @@ interface CachedAdvisony {
   crop: { id: string; name: string };
   /** 地块时区，由坐标决定，与请求者无关。 */
   timezone: string;
+  /** 参考点海拔 m，由坐标决定；缺失为 null。 */
+  elevation: number | null;
+  /** 变量完整度，由上游响应决定，与请求者无关。 */
+  variableTier: "full" | "extended" | "core";
+  /** 本次实际请求的变量清单，与请求者无关；用于页面「数据来源」核对。 */
+  requestedVariables: { hourly: string[]; daily: string[] };
   /** 省级地区口径；未识别到省份时为 null。 */
   region: RegionInfo | null;
   /** 作物选取依据（自动或手动）。 */
   selection: CropSelection | null;
   current: CurrentConditions;
+  /** 未来逐日预报（逐日只与坐标、作物有关）。 */
+  forecast: DailyForecastDay[];
   summary: AdvisorySummary;
   cards: AdviceCard[];
   notices: string[];
@@ -224,9 +233,13 @@ export async function onRequestGet(context: PagesContext): Promise<Response> {
     generatedAt: new Date().toISOString(),
     crop: { id: crop.id, name: crop.name },
     timezone: weather.timezone,
+    elevation: Number.isFinite(weather.elevation) ? weather.elevation : null,
+    variableTier: weather.variableTier,
+    requestedVariables: weather.requestedVariables,
     region: regionInfo,
     selection,
     current: buildCurrentConditions(ctx),
+    forecast: buildDailyForecast(ctx),
     summary,
     cards,
     notices,
@@ -494,14 +507,23 @@ function respond(
     ok: true,
     generatedAt: bundle.generatedAt,
     location,
+    elevation: bundle.elevation,
     crop: bundle.crop,
     region: bundle.region,
     selection: bundle.selection,
     current: bundle.current,
+    forecast: bundle.forecast,
     summary: bundle.summary,
     cards: bundle.cards,
     notices: bundle.notices,
-    source: { weather: WEATHER_SOURCE, cache: cacheState },
+    source: {
+      weather: WEATHER_SOURCE,
+      cache: cacheState,
+      variableTier: bundle.variableTier,
+      hourlyVariables: bundle.requestedVariables.hourly,
+      dailyVariables: bundle.requestedVariables.daily,
+      license: "CC BY 4.0",
+    },
   };
 
   return jsonResponse(payload, {
@@ -529,10 +551,17 @@ async function readCached(cache: CacheLike, cacheKey: string): Promise<CachedAdv
       !parsed.crop ||
       !Array.isArray(parsed.cards) ||
       !Array.isArray(parsed.notices) ||
+      !Array.isArray(parsed.forecast) ||
       !parsed.summary ||
       !parsed.current ||
       !("region" in parsed) ||
-      !("selection" in parsed)
+      !("selection" in parsed) ||
+      !("elevation" in parsed) ||
+      typeof parsed.variableTier !== "string" ||
+      // 旧版本缓存体没有变量清单，前端「数据来源」区块会空白，按未命中处理重新取数。
+      !parsed.requestedVariables ||
+      !Array.isArray(parsed.requestedVariables.hourly) ||
+      !Array.isArray(parsed.requestedVariables.daily)
     ) {
       return null;
     }
